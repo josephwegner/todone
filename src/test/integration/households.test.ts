@@ -271,21 +271,46 @@ describe('household bootstrap API and persistence', () => {
   });
 
   it.each([
-    ['pending', membershipRecords({ lookup: { activationState: 'PENDING_ACTIVATION' } }), 403],
-    ['inactive', membershipRecords({ lookup: { activationState: 'INACTIVE' } }), 403],
+    [
+      'pending',
+      membershipRecords({ lookup: { activationState: 'PENDING_ACTIVATION' } }),
+      403,
+      'MEMBERSHIP_PENDING_ACTIVATION',
+    ],
+    [
+      'inactive',
+      membershipRecords({ lookup: { activationState: 'INACTIVE' } }),
+      403,
+      'MEMBERSHIP_INACTIVE',
+    ],
     [
       'credential-stale',
       membershipRecords({ lookup: { credentialsValidAfter: '2028-01-01T00:00:00.000Z' } }),
       401,
+      'SESSION_REAUTHENTICATION_REQUIRED',
     ],
-    ['inconsistent', membershipRecords({ membership: { role: 'child' } }), 500],
+    [
+      'inconsistent',
+      membershipRecords({ membership: { role: 'child' } }),
+      500,
+      'MEMBERSHIP_INCONSISTENT',
+    ],
   ])(
     'does not treat a %s Membership as an unattached account',
-    async (_state, records, statusCode) => {
+    async (_state, records, statusCode, code) => {
       const repository = new MembershipRecordRepository('sub-one', records);
 
       const response = await currentMembership(event('GET'), { repository });
       expect(response.statusCode).toBe(statusCode);
+      expect(response.headers?.['cache-control']).toBe('no-store');
+      const body = JSON.parse(response.body ?? '{}');
+      expect(Object.keys(body)).toEqual(['error']);
+      expect(Object.keys(body.error).sort()).toEqual(['code', 'message', 'requestId']);
+      expect(body.error.code).toBe(code);
+      expect(body.error.requestId).toBe('safe-request-id');
+      for (const value of ['house-one', 'member-one', 'parent-one', 'sub-one']) {
+        expect(response.body).not.toContain(value);
+      }
       expect(response.body).not.toContain('River House');
       expect(response.body).not.toContain('membership":null');
     },
@@ -299,6 +324,7 @@ describe('household bootstrap API and persistence', () => {
 
     const response = await readProfile(event('GET'), { repository });
     expect(response.statusCode).toBe(403);
+    expect(JSON.parse(response.body ?? '{}').error.code).toBe('MEMBER_ACCESS_UNAVAILABLE');
     expect(response.body).not.toContain('profile');
   });
 });

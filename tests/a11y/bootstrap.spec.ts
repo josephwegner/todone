@@ -14,7 +14,7 @@ function jwt(username = 'ChildOne'): string {
   })}.test-signature`;
 }
 
-async function signInAsChild(page: Page): Promise<void> {
+async function signInAsChild(page: Page, failureCode?: string): Promise<void> {
   await page.route('https://cognito-idp.local.amazonaws.com/**', async (route: Route) => {
     const target = route.request().headers()['x-amz-target'] ?? '';
     if (target.endsWith('.InitiateAuth')) {
@@ -51,19 +51,22 @@ async function signInAsChild(page: Page): Promise<void> {
   });
   await page.route('**/api/v1/memberships/current', (route) =>
     route.fulfill({
+      status: failureCode ? 403 : 200,
       headers: { 'cache-control': 'no-store' },
-      json: {
-        membership: {
-          memberId: 'child-member',
-          username: 'child-one',
-          role: 'child',
-          household: {
-            householdId: 'house-one',
-            name: 'River House',
-            timezone: 'America/Chicago',
+      json: failureCode
+        ? { error: { code: failureCode } }
+        : {
+            membership: {
+              memberId: 'child-member',
+              username: 'child-one',
+              role: 'child',
+              household: {
+                householdId: 'house-one',
+                name: 'River House',
+                timezone: 'America/Chicago',
+              },
+            },
           },
-        },
-      },
     }),
   );
   await page.route('**/api/v1/profiles/me', (route) =>
@@ -242,3 +245,19 @@ test('the parent family directory has no detectable WCAG A/AA violations', async
     .analyze();
   expect(results.violations, JSON.stringify(results.violations, null, 2)).toEqual([]);
 });
+
+for (const code of ['MEMBERSHIP_PENDING_ACTIVATION', 'MEMBERSHIP_INACTIVE']) {
+  test(`session caller outcome ${code} has accessible recovery`, async ({ page }) => {
+    await page.goto('/sign-in');
+    await signInAsChild(page, code);
+    await expect(
+      page.getByRole('heading', { name: 'We couldn’t open your session' }),
+    ).toBeFocused();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeEnabled();
+    const signOut = page.getByRole('button', { name: 'Sign out', exact: true });
+    await signOut.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeFocused();
+  });
+}

@@ -65,11 +65,16 @@ An active member receives exactly:
 ```
 
 `{"membership": null}` means only that no user-membership lookup exists. It is not used for a
-pending, inactive, credential-cutoff-rejected, or inconsistent record. A pending or inactive
-identity receives `403 MEMBER_ACCESS_UNAVAILABLE`; a token without an `iat` later than the
-server-owned credential cutoff receives `401 SESSION_REAUTHENTICATION_REQUIRED`; malformed or
-inconsistent persistence receives a generic `500 INTERNAL_ERROR` with a request ID. These
-responses expose no household or target values. The client routes an unattached identity to
+pending, inactive, credential-cutoff-rejected, or inconsistent record. On this authenticated
+self-read, pending membership receives `403 MEMBERSHIP_PENDING_ACTIVATION`, inactive membership
+receives `403 MEMBERSHIP_INACTIVE`, and inconsistent records receive `500 MEMBERSHIP_INCONSISTENT`.
+A token without an `iat` later than the server-owned credential cutoff receives
+`401 SESSION_REAUTHENTICATION_REQUIRED`. Each uses a safe message and request ID and exposes
+no household, target, or stored identity values. These typed codes are a deliberate caller-only
+extension approved for `rearchitect-session-management` on 2026-10-19. Ordinary protected
+operations retain generic `403 MEMBER_ACCESS_UNAVAILABLE` and `500 INTERNAL_ERROR` denials.
+Unknown service failures remain recoverable errors, never inferred membership outcomes.
+The client routes an unattached identity to
 household setup, a pending additional parent through activation, and inactive/stale access to a
 generic sign-in or unavailable surface rather than treating either as a new household owner.
 

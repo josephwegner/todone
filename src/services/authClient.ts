@@ -9,6 +9,12 @@ import type { AuthConfig } from '../config/authConfig';
 import { messages } from '../i18n/messages';
 import { getErrorCode, getErrorMessage, mapAuthError } from './authErrors';
 import { isValidUsername, normalizeUsernameForCognito } from './username';
+import {
+  AuthProviderUnavailableError,
+  AuthSessionEndedError,
+  AuthStorageUnavailableError,
+  isTerminalProviderFailure,
+} from './authSessionErrors';
 
 const CognitoErrorCode = {
   invalidPassword: 'InvalidPasswordException',
@@ -51,8 +57,8 @@ export class AuthSessionUnavailableError extends Error {
  * branch is unreachable unless a developer has explicitly bootstrapped a
  * local pool.
  *
- * This client performs authentication only. Household/session-restoration
- * behavior belongs to `bootstrap-household-membership`.
+ * This client performs authentication only. The app session controller owns
+ * lifecycle/context; each provider operation injects its bound storage scope.
  */
 export class AuthClient {
   private readonly config: AuthConfig;
@@ -61,10 +67,11 @@ export class AuthClient {
   private readonly storage: Storage;
   private currentUser: CognitoUser | null = null;
   private localSession: AuthSession | null = null;
+  private localRefreshToken: string | null = null;
 
-  constructor(config: AuthConfig) {
+  constructor(config: AuthConfig, storage: Storage) {
     this.config = config;
-    this.storage = sessionStorage;
+    this.storage = storage;
     this.authenticatedPool = new CognitoUserPool({
       UserPoolId: config.userPoolId,
       ClientId: config.clientId,
@@ -183,14 +190,15 @@ export class AuthClient {
       }
     } finally {
       // Sign-out is a local privacy boundary. Cognito SDK errors must not
-      // leave this tab's session credentials or derived state behind.
+      // leave this bound scope's credentials behind.
       this.currentUser = null;
       this.localSession = null;
+      this.localRefreshToken = null;
       this.clearStoredSession();
     }
   }
 
-  /** Restores a non-expired session from this tab's sessionStorage. */
+  /** The SDK getSession callback returns cached credentials or renews expired ones. */
   async restoreSession(): Promise<AuthSession | null> {
     if (this.config.localEndpoint) {
       return this.restoreLocalSession();
@@ -202,19 +210,25 @@ export class AuthClient {
       return null;
     }
 
-    return new Promise<AuthSession | null>((resolve) => {
+    return new Promise<AuthSession | null>((resolve, reject) => {
       user.getSession((error: Error | null, cognitoSession: CognitoUserSession | null) => {
-        if (error || !cognitoSession) {
-          this.clearStoredSession();
-          resolve(null);
+        if (error) {
+          reject(this.sessionFailure(error));
+          return;
+        }
+        if (!cognitoSession) {
+          reject(new AuthStorageUnavailableError());
           return;
         }
 
         const session = toAuthSession(cognitoSession);
+        if (!Number.isFinite(session.expiresAt.getTime())) {
+          reject(new AuthStorageUnavailableError());
+          return;
+        }
         if (session.expiresAt.getTime() <= Date.now()) {
-          user.signOut();
           this.clearStoredSession();
-          resolve(null);
+          reject(new AuthSessionEndedError());
           return;
         }
 
@@ -222,6 +236,79 @@ export class AuthClient {
         resolve(session);
       });
     });
+  }
+
+  /** Cognito expects REFRESH_TOKEN_AUTH; refreshSession caches before invoking its callback. */
+  async renewSession(): Promise<AuthSession | null> {
+    if (this.config.localEndpoint) return this.renewLocalSession();
+    const user = this.currentUser;
+    if (!user) return this.restoreSession();
+    const refreshToken = user.getSignInUserSession()?.getRefreshToken();
+    if (!refreshToken?.getToken()) {
+      this.clearStoredSession();
+      throw new AuthSessionEndedError();
+    }
+    return new Promise((resolve, reject) => {
+      user.refreshSession(refreshToken, (error, session) => {
+        if (error) {
+          reject(this.sessionFailure(error));
+          return;
+        }
+        if (!session) {
+          reject(new AuthProviderUnavailableError());
+          return;
+        }
+        const credentials = toAuthSession(session);
+        if (credentials.expiresAt.getTime() <= Date.now()) {
+          reject(new AuthSessionEndedError());
+          return;
+        }
+        resolve(credentials);
+      });
+    });
+  }
+
+  private sessionFailure(error: unknown): Error {
+    if (error instanceof AuthStorageUnavailableError) return error;
+    if (isTerminalProviderFailure(error)) {
+      this.clearStoredSession();
+      this.currentUser = null;
+      this.localSession = null;
+      this.localRefreshToken = null;
+      return new AuthSessionEndedError();
+    }
+    return new AuthProviderUnavailableError();
+  }
+
+  /** The local emulator supports the same refresh flow through its raw InitiateAuth API. */
+  private async renewLocalSession(): Promise<AuthSession | null> {
+    if (!this.localRefreshToken) {
+      this.clearStoredSession();
+      throw new AuthSessionEndedError();
+    }
+    const { InitiateAuthCommand } = await import('@aws-sdk/client-cognito-identity-provider');
+    const client = await this.localCognitoClient();
+    try {
+      const response = await client.send(
+        new InitiateAuthCommand({
+          ClientId: this.config.clientId,
+          AuthFlow: 'REFRESH_TOKEN_AUTH',
+          AuthParameters: { REFRESH_TOKEN: this.localRefreshToken },
+        }),
+      );
+      const result = response.AuthenticationResult;
+      if (!result?.IdToken || !result.AccessToken) throw new AuthProviderUnavailableError();
+      const session = localAuthSession(result.IdToken, result.AccessToken, result.ExpiresIn);
+      this.localRefreshToken = result.RefreshToken ?? this.localRefreshToken;
+      this.storage.setItem(
+        this.localSessionKey(),
+        serializeSession(session, this.localRefreshToken),
+      );
+      this.localSession = session;
+      return session;
+    } catch (error) {
+      throw this.sessionFailure(error);
+    }
   }
 
   /** Returns the current ID token JWT for use as a bearer token, or null if signed out. */
@@ -240,7 +327,12 @@ export class AuthClient {
   }
 
   private async signInSrp(username: string, password: string): Promise<SignInResult> {
-    const user = new CognitoUser({ Username: username, Pool: this.authenticatedPool });
+    // CognitoUser does not inherit Storage from its pool; bind every SDK write.
+    const user = new CognitoUser({
+      Username: username,
+      Pool: this.authenticatedPool,
+      Storage: this.storage,
+    });
     const authDetails = new AuthenticationDetails({ Username: username, Password: password });
 
     return new Promise<SignInResult>((resolve) => {
@@ -257,11 +349,19 @@ export class AuthClient {
   }
 
   private user(username: string): CognitoUser {
-    return new CognitoUser({ Username: username, Pool: this.authenticatedPool });
+    return new CognitoUser({
+      Username: username,
+      Pool: this.authenticatedPool,
+      Storage: this.storage,
+    });
   }
 
   private registrationUser(username: string): CognitoUser {
-    return new CognitoUser({ Username: username, Pool: this.registrationPool });
+    return new CognitoUser({
+      Username: username,
+      Pool: this.registrationPool,
+      Storage: this.storage,
+    });
   }
 
   private async registerLocal(
@@ -307,18 +407,18 @@ export class AuthClient {
       if (!result?.IdToken || !result.AccessToken) {
         return {
           kind: 'error',
-          message: 'Something went wrong. Please try again.',
+          message: messages.generic.unexpectedError,
           recoverable: true,
         };
       }
 
-      const session: AuthSession = {
-        idToken: result.IdToken,
-        accessToken: result.AccessToken,
-        expiresAt: new Date(Date.now() + (result.ExpiresIn ?? 3600) * 1000),
-      };
+      const session = localAuthSession(result.IdToken, result.AccessToken, result.ExpiresIn);
       this.localSession = session;
-      this.storage.setItem(this.localSessionKey(), serializeSession(session));
+      this.localRefreshToken = result.RefreshToken ?? null;
+      this.storage.setItem(
+        this.localSessionKey(),
+        serializeSession(session, this.localRefreshToken),
+      );
       return { kind: 'success', session };
     } catch (err) {
       return { kind: 'error', ...mapAuthError(err) };
@@ -411,7 +511,7 @@ export class AuthClient {
     });
   }
 
-  private restoreLocalSession(): AuthSession | null {
+  private async restoreLocalSession(): Promise<AuthSession | null> {
     const stored = this.storage.getItem(this.localSessionKey());
     if (!stored) {
       return null;
@@ -422,6 +522,7 @@ export class AuthClient {
         idToken: unknown;
         accessToken: unknown;
         expiresAt: unknown;
+        refreshToken: unknown;
       }>;
       if (
         typeof value.idToken !== 'string' ||
@@ -434,20 +535,28 @@ export class AuthClient {
       const session: AuthSession = {
         idToken: value.idToken,
         accessToken: value.accessToken,
-        expiresAt: new Date(value.expiresAt),
+        expiresAt: new Date(
+          Math.min(
+            new Date(value.expiresAt).getTime(),
+            jwtExpiration(value.idToken),
+            jwtExpiration(value.accessToken),
+          ),
+        ),
       };
-      if (
-        !Number.isFinite(session.expiresAt.getTime()) ||
-        session.expiresAt.getTime() <= Date.now()
-      ) {
-        throw new Error('Expired stored session');
+      if (!Number.isFinite(session.expiresAt.getTime())) throw new AuthStorageUnavailableError();
+      this.localRefreshToken = typeof value.refreshToken === 'string' ? value.refreshToken : null;
+      if (session.expiresAt.getTime() <= Date.now()) {
+        if (!this.localRefreshToken) {
+          this.clearStoredSession();
+          return null;
+        }
+        return this.renewLocalSession();
       }
-
       this.localSession = session;
       return session;
     } catch {
       this.clearStoredSession();
-      return null;
+      throw new AuthStorageUnavailableError();
     }
   }
 
@@ -530,14 +639,50 @@ function toAuthSession(session: CognitoUserSession): AuthSession {
   return {
     idToken: session.getIdToken().getJwtToken(),
     accessToken: session.getAccessToken().getJwtToken(),
-    expiresAt: new Date(session.getIdToken().getExpiration() * 1000),
+    expiresAt: new Date(
+      Math.min(session.getIdToken().getExpiration(), session.getAccessToken().getExpiration()) *
+        1000,
+    ),
   };
 }
 
-function serializeSession(session: AuthSession): string {
+function serializeSession(session: AuthSession, refreshToken: string | null = null): string {
   return JSON.stringify({
     idToken: session.idToken,
     accessToken: session.accessToken,
     expiresAt: session.expiresAt.toISOString(),
+    ...(refreshToken ? { refreshToken } : {}),
   });
+}
+
+const JWT_EXPIRATION_CLAIM = 'exp';
+const SECONDS_TO_MILLISECONDS = 1000;
+const DEFAULT_LOCAL_TOKEN_SECONDS = 3600;
+function jwtExpiration(token: string): number {
+  try {
+    const encoded = token.split('.')[1];
+    if (!encoded) return Number.POSITIVE_INFINITY;
+    const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+    const claims: unknown = JSON.parse(
+      globalThis.atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')),
+    );
+    if (!claims || typeof claims !== 'object' || !(JWT_EXPIRATION_CLAIM in claims))
+      return Number.POSITIVE_INFINITY;
+    const seconds = claims[JWT_EXPIRATION_CLAIM];
+    if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return Number.POSITIVE_INFINITY;
+    return seconds * SECONDS_TO_MILLISECONDS;
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+function localAuthSession(idToken: string, accessToken: string, expiresIn?: number): AuthSession {
+  const responseExpiry =
+    Date.now() + (expiresIn ?? DEFAULT_LOCAL_TOKEN_SECONDS) * SECONDS_TO_MILLISECONDS;
+  return {
+    idToken,
+    accessToken,
+    expiresAt: new Date(
+      Math.min(responseExpiry, jwtExpiration(idToken), jwtExpiration(accessToken)),
+    ),
+  };
 }

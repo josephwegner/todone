@@ -1,96 +1,76 @@
-import { createRouter, createWebHistory, type RouteLocationNormalized } from 'vue-router';
+import { createRouter, createWebHistory, type RouterHistory } from 'vue-router';
 import ProductionBootstrap from '../components/ProductionBootstrap.vue';
 import TodoPlaceholder from '../components/TodoPlaceholder.vue';
-import { loadAuthConfig } from '../config/authConfig';
 import { messages } from '../i18n/messages';
-import { applyMembershipContext } from '../presentation/appContext';
-import { applyProfileTone } from '../presentation/profileTone';
-import { AuthClient } from '../services/authClient';
-import { fetchCurrentMembership } from '../services/householdClient';
-import { fetchMyProfile } from '../services/profileClient';
+import type { SessionController, SessionState } from '../session/sessionController';
 import {
   appRouteDefinitions,
   AppRouteName,
   isPublicRouteName,
   isUnavailableRouteName,
 } from './routes';
-import type { AppRouteName as AppRouteNameType } from './routes';
+import type { AppRouteName as RouteName } from './routes';
 
-export const router = createRouter({
-  history: createWebHistory(),
-  routes: [
-    ...Object.values(appRouteDefinitions).map((route) => ({
-      path: route.path,
-      name: route.name,
-      component: route.todoPlaceholder ? TodoPlaceholder : ProductionBootstrap,
-    })),
-    { path: '/:pathMatch(.*)*', redirect: { name: AppRouteName.root } },
-  ],
-});
-
-/**
- * Resolves only safe session, membership, and profile prerequisites before a
- * protected route renders. Form values and secrets never participate in route
- * state, redirects, or history.
- */
-router.beforeEach(async (to) => resolveRouteAccess(to));
-router.afterEach((to) => {
-  const routeName = to.name as AppRouteNameType;
-  document.title = `${appRouteDefinitions[routeName].title} · ${messages.navigation.appName}`;
-});
-
-async function resolveRouteAccess(to: RouteLocationNormalized) {
-  const routeName = to.name as AppRouteNameType;
-  if (isUnavailableRouteName(routeName)) {
-    return { name: AppRouteName.root, replace: true };
-  }
-
-  const authClient = new AuthClient(loadAuthConfig());
-  const session = await authClient.restoreSession();
-  if (!session) {
-    applyMembershipContext(null);
+/** Presentation routing only; every API still enforces current server authorization. */
+export function sessionRouteDestination(
+  routeName: RouteName,
+  state: SessionState,
+): true | RouteName {
+  if (isUnavailableRouteName(routeName)) return AppRouteName.root;
+  if (state.kind === 'signed-out') {
     if (isPublicRouteName(routeName)) return true;
-    return { name: AppRouteName.signIn, replace: true };
+    return AppRouteName.signIn;
   }
-
-  const membershipResult = await fetchCurrentMembership(session.idToken);
-  if (membershipResult.kind === 'error') {
-    applyMembershipContext(null);
-    if (membershipResult.recoverable) return true;
-    return { name: AppRouteName.signIn, replace: true };
+  if (state.kind !== 'ready') return true;
+  const context = state.context;
+  if (context.kind === 'unattached') {
+    if (routeName === AppRouteName.householdSetup) return true;
+    return AppRouteName.householdSetup;
   }
-  const membership = membershipResult.data.membership;
-  applyMembershipContext(membership);
-  if (!membership) {
-    return routeName === AppRouteName.householdSetup
-      ? true
-      : { name: AppRouteName.householdSetup, replace: true };
+  if (context.kind === 'profile-required') {
+    if (routeName === AppRouteName.profileSetup) return true;
+    return AppRouteName.profileSetup;
   }
-
-  const profileResult = await fetchMyProfile(session.idToken);
-  if (profileResult.kind === 'error') {
-    if (profileResult.recoverable) return true;
-    return { name: AppRouteName.signIn, replace: true };
-  }
-  if (!profileResult.data.profile) {
-    return routeName === AppRouteName.profileSetup
-      ? true
-      : { name: AppRouteName.profileSetup, replace: true };
-  }
-  applyProfileTone(profileResult.data.profile.color);
-
-  const homeRoute = membership.role === 'child' ? AppRouteName.todos : AppRouteName.family;
+  const home = context.membership.role === 'child' ? AppRouteName.todos : AppRouteName.family;
   if (
     routeName === AppRouteName.root ||
     isPublicRouteName(routeName) ||
     routeName === AppRouteName.householdSetup ||
     routeName === AppRouteName.profileSetup ||
-    (membership.role === 'child' &&
+    (context.membership.role === 'child' &&
       (routeName === AppRouteName.family ||
         routeName === AppRouteName.newChild ||
         routeName === AppRouteName.resetChildPassword))
-  ) {
-    return { name: homeRoute, replace: true };
-  }
+  )
+    return home;
   return true;
+}
+
+export function createAppRouter(
+  session: SessionController,
+  history: RouterHistory = createWebHistory(),
+) {
+  const router = createRouter({
+    history,
+    routes: [
+      ...Object.values(appRouteDefinitions).map((route) => ({
+        path: route.path,
+        name: route.name,
+        component: route.todoPlaceholder ? TodoPlaceholder : ProductionBootstrap,
+      })),
+      { path: '/:pathMatch(.*)*', redirect: { name: AppRouteName.root } },
+    ],
+  });
+  router.beforeEach(async (to) => {
+    if (session.state.value.kind !== 'uninitialized' && session.state.value.kind !== 'initializing')
+      await session.reconcileBrowserAccount();
+    await session.initialize();
+    const destination = sessionRouteDestination(to.name as RouteName, session.state.value);
+    if (destination === true) return true;
+    return { name: destination, replace: true };
+  });
+  router.afterEach((to) => {
+    document.title = `${appRouteDefinitions[to.name as RouteName].title} · ${messages.navigation.appName}`;
+  });
+  return router;
 }

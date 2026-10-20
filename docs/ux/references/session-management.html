@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Todone session-state reference</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bark: #2e2925;
+        --secondary: #504943;
+        --forest: #1f563f;
+        --forest-deep: #143d2e;
+        --forest-soft: #e5eee7;
+        --canvas: #f6f1e8;
+        --paper: #fffcf6;
+        --border: #d8cec0;
+        --danger: #a44232;
+        --focus: #216f4f;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      body {
+        margin: 0;
+        background: var(--canvas);
+        color: var(--bark);
+        font-family:
+          Avenir Next,
+          Avenir,
+          Segoe UI,
+          Inter,
+          system-ui,
+          sans-serif;
+        line-height: 1.5;
+        overflow-wrap: anywhere;
+      }
+      button,
+      input {
+        font: inherit;
+      }
+      a {
+        color: var(--forest);
+        text-underline-offset: 0.2em;
+      }
+      :focus-visible {
+        outline: 3px solid var(--focus);
+        outline-offset: 4px;
+      }
+      .review {
+        padding: 1rem;
+        border-bottom: 1px solid var(--border);
+        background: var(--paper);
+      }
+      .review p {
+        max-width: 74ch;
+        margin: 0 auto 0.7rem;
+      }
+      .review nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem 0.75rem;
+        max-width: 80rem;
+        margin: auto;
+      }
+      nav a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+        padding: 0.4rem;
+        border-radius: 0.4rem;
+      }
+      nav a[aria-current] {
+        background: var(--forest-soft);
+        outline: 2px solid var(--forest);
+        font-weight: 700;
+      }
+      .app {
+        background: var(--paper);
+        min-height: 38rem;
+      }
+      .brand {
+        padding: 1rem 1.25rem;
+        color: var(--paper);
+        background: var(--forest-deep);
+        font-size: 1.25rem;
+        font-weight: 750;
+      }
+      main {
+        padding: 1.5rem 1.25rem 3rem;
+        max-width: 44rem;
+        margin: auto;
+      }
+      h1 {
+        margin: 0 0 1rem;
+        font-size: clamp(1.8rem, 5vw, 2.5rem);
+        line-height: 1.15;
+        letter-spacing: -0.03em;
+      }
+      h2 {
+        margin: 0 0 0.6rem;
+        font-size: 1.25rem;
+      }
+      p {
+        margin: 0 0 1rem;
+      }
+      .eyebrow {
+        color: var(--secondary);
+        font-size: 0.85rem;
+        font-weight: 650;
+      }
+      .reserved {
+        min-height: 10rem;
+      }
+      .feedback {
+        border-left: 4px solid var(--danger);
+        padding: 0 0 0 1rem;
+        margin: 1.5rem 0;
+      }
+      .feedback.quiet {
+        border-color: var(--forest);
+      }
+      .actions {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.8rem;
+        margin-top: 1.5rem;
+      }
+      button {
+        min-height: 44px;
+        padding: 0.65rem 1rem;
+        border: 2px solid var(--forest);
+        border-radius: 0.7rem;
+        background: var(--forest);
+        color: var(--paper);
+        font-weight: 650;
+        cursor: pointer;
+        max-width: 100%;
+      }
+      button.secondary {
+        background: var(--paper);
+        color: var(--forest);
+      }
+      button:disabled {
+        background: var(--forest-soft);
+        color: var(--secondary);
+        border-color: var(--secondary);
+        cursor: wait;
+      }
+      label {
+        display: block;
+        font-weight: 650;
+        margin: 1rem 0 0.4rem;
+      }
+      input {
+        width: 100%;
+        min-height: 48px;
+        padding: 0.7rem;
+        border: 1px solid var(--secondary);
+        border-radius: 0.7rem;
+        color: var(--bark);
+        background: var(--paper);
+      }
+      .hint {
+        color: var(--secondary);
+        font-size: 0.95rem;
+        margin-top: 0.5rem;
+      }
+      .result {
+        min-height: 1.5rem;
+        margin-top: 1rem;
+      }
+      .reference-action {
+        padding-top: 1rem;
+        margin-top: 1.5rem;
+        border-top: 1px dashed var(--border);
+      }
+      @media (min-width: 768px) {
+        .app {
+          max-width: 64rem;
+          margin: 2rem auto;
+          border: 1px solid var(--border);
+          border-radius: 1.15rem;
+          overflow: hidden;
+        }
+        main {
+          padding: 2.5rem 2rem 4rem;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation: none !important;
+          transition: none !important;
+          scroll-behavior: auto !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <aside class="review" aria-label="Reference controls">
+      <p>
+        <strong>Session-state reference · owner approved 2026-10-19.</strong> Synthetic content
+        only. Review controls below switch examples. No authentication, storage, or network
+        operations run. Do not enter real credentials.
+      </p>
+      <nav aria-label="Reference states">
+        <a href="#startup">Startup</a>
+        <a href="#network">Startup error</a>
+        <a href="#storage">Storage error</a>
+        <a href="#background">Background failure</a>
+        <a href="#renewal">Silent renewal</a>
+        <a href="#ended">Session ended</a>
+        <a href="#migration">Upgrade</a>
+      </nav>
+    </aside>
+    <div class="app">
+      <header class="brand">Todone</header>
+      <main id="main">
+        <section data-state="startup">
+          <h1 tabindex="-1">Welcome back</h1>
+          <div class="reserved" role="status"><p>Restoring your private session…</p></div>
+        </section>
+        <section data-state="network" hidden>
+          <h1 tabindex="-1">We couldn’t open your session</h1>
+          <div class="reserved">
+            <div class="feedback">
+              <p>
+                Your account details couldn’t be loaded. Check your connection and try again. You
+                don’t need to enter your password again unless your session has ended.
+              </p>
+            </div>
+            <div class="actions">
+              <button type="button" data-retry>Retry</button
+              ><button type="button" class="secondary" data-sign-out>Sign out</button>
+            </div>
+            <p class="result" role="status" data-result></p>
+          </div>
+        </section>
+        <section data-state="storage" hidden>
+          <h1 tabindex="-1">We couldn’t access your saved session</h1>
+          <div class="reserved">
+            <div class="feedback">
+              <p>
+                Allow this site to use browser storage, then try again. If you choose Sign out, this
+                page will clear your private information. If browser storage stays unavailable, we
+                can’t confirm sign-out in other tabs; close those tabs too.
+              </p>
+            </div>
+            <div class="actions">
+              <button type="button" data-retry>Retry</button
+              ><button type="button" class="secondary" data-sign-out>Sign out</button>
+            </div>
+            <p class="result" role="status" data-result></p>
+          </div>
+        </section>
+        <section data-state="background" hidden>
+          <p class="eyebrow">My profile · synthetic example</p>
+          <h1 tabindex="-1">My profile</h1>
+          <p>Your display name is how your family sees you.</p>
+          <label for="background-name">Display name</label>
+          <input
+            id="background-name"
+            value="Alexandra-Rose of the Evergreen Family"
+            autocomplete="off"
+          />
+          <p class="hint">Your unsaved changes stay on this page while you retry.</p>
+          <div class="feedback quiet" aria-labelledby="background-heading">
+            <h2 id="background-heading">We couldn’t refresh your account details</h2>
+            <p>
+              You can keep working with the details already loaded. Check your connection and retry
+              before trying an action that needs an updated session.
+            </p>
+            <button type="button" data-retry>Retry</button>
+            <p class="result" role="status" data-result></p>
+          </div>
+          <div class="actions">
+            <button type="button" class="secondary" data-sign-out>Sign out</button>
+          </div>
+        </section>
+        <section data-state="renewal" hidden>
+          <p class="eyebrow">My profile · synthetic example</p>
+          <h1 tabindex="-1">My profile</h1>
+          <p>Your display name is how your family sees you.</p>
+          <label for="renewal-name">Display name</label>
+          <input
+            id="renewal-name"
+            value="Alexandra-Rose of the Evergreen Family"
+            autocomplete="off"
+          />
+          <p class="hint">Choose a name your family recognizes.</p>
+          <div class="actions">
+            <button type="button" class="secondary" data-sign-out>Sign out</button>
+          </div>
+        </section>
+        <section data-state="ended" hidden>
+          <h1 tabindex="-1">Sign in</h1>
+          <p data-ended-message>Your session ended. Sign in to continue.</p>
+          <form>
+            <label for="username">Username</label><input id="username" autocomplete="off" />
+            <label for="password">Password</label
+            ><input
+              id="password"
+              type="password"
+              autocomplete="off"
+              aria-describedby="reference-password-hint"
+            />
+            <p id="reference-password-hint" class="hint">
+              Reference only. Use invented values; no sign-in is performed.
+            </p>
+            <div class="actions"><button type="submit">Sign in</button></div>
+            <p class="result" role="status" data-result></p>
+          </form>
+        </section>
+        <section data-state="migration" hidden>
+          <h1 tabindex="-1">Sign in</h1>
+          <p>
+            Sign in once more after this update. Your account will then be shared across Todone tabs
+            in this browser and stay signed in while your session remains valid. Signing out will
+            sign you out of those tabs too.
+          </p>
+          <p class="hint">
+            In the app, the existing sign-in form follows this one-time message. No legacy tab
+            account is promoted automatically.
+          </p>
+        </section>
+      </main>
+    </div>
+    <script>
+      // Presentation-only review controls. No provider, persistence, or API integration.
+      const sections = [...document.querySelectorAll('[data-state]')];
+      const links = [...document.querySelectorAll('.review a')];
+      const pendingRetries = new Set();
+      function showState() {
+        const selected = location.hash.slice(1);
+        const state = sections.some((section) => section.dataset.state === selected)
+          ? selected
+          : 'startup';
+        pendingRetries.forEach((retry) => {
+          retry.disabled = false;
+          retry.textContent = 'Retry';
+        });
+        pendingRetries.clear();
+        document.querySelectorAll('[data-result]').forEach((result) => {
+          result.textContent = '';
+        });
+        document.querySelectorAll('[data-finish]').forEach((control) => {
+          control.remove();
+        });
+        sections.forEach((section) => {
+          section.hidden = section.dataset.state !== state;
+        });
+        links.forEach((link) => {
+          if (link.hash === `#${state}`) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+        document.querySelector(`[data-state="${state}"] h1`).focus();
+      }
+      document.querySelectorAll('[data-retry]').forEach((retry) => {
+        retry.addEventListener('click', () => {
+          const section = retry.closest('section');
+          retry.textContent = 'Retrying…';
+          retry.disabled = true;
+          pendingRetries.add(retry);
+          const result = section.querySelector('[data-result]');
+          result.textContent = 'Trying again…';
+          const finish = document.createElement('button');
+          finish.type = 'button';
+          finish.dataset.finish = '';
+          finish.className = 'secondary reference-action';
+          finish.textContent = 'Reference control: finish retry';
+          result.after(finish);
+          finish.addEventListener('click', () => {
+            retry.textContent = 'Retry';
+            retry.disabled = false;
+            pendingRetries.delete(retry);
+            result.textContent = 'Connection restored. You can continue.';
+            finish.remove();
+            retry.focus();
+          });
+        });
+      });
+      document.querySelectorAll('[data-sign-out]').forEach((button) => {
+        button.addEventListener('click', () => {
+          document.querySelectorAll('input').forEach((input) => {
+            input.value = '';
+          });
+          const storageUnavailable = button.closest('section').dataset.state === 'storage';
+          document.querySelector('[data-ended-message]').textContent = storageUnavailable
+            ? 'Your private information has been cleared from this page. We couldn’t confirm sign-out in other tabs. Close those tabs too.'
+            : 'You’re signed out of Todone in this browser.';
+          location.hash = 'ended';
+        });
+      });
+      document.querySelector('form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        event.currentTarget.reset();
+        event.currentTarget.querySelector('[data-result]').textContent =
+          'Reference only. No sign-in was performed.';
+      });
+      addEventListener('hashchange', showState);
+      showState();
+    </script>
+  </body>
+</html>

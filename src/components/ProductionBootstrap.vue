@@ -1,22 +1,19 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
-import { loadAuthConfig } from '../config/authConfig';
+import type { CredentialSource } from '../services/apiClient';
+import {
+  SessionCredentialsUnavailableError,
+  SessionOperationCancelledError,
+} from '../session/sessionErrors';
 import { messages } from '../i18n/messages';
 import { applyMembershipContext } from '../presentation/appContext';
-import { applyProfileTone, clearProfileTone } from '../presentation/profileTone';
+import { applyProfileTone } from '../presentation/profileTone';
+import { useSessionController } from '../session/injection';
 import { meetsAccountPasswordPolicy } from '../services/accountPassword';
 import { isValidUsername, normalizeUsernameForCognito } from '../services/username';
-import {
-  AuthClient,
-  AuthSessionUnavailableError,
-  type AuthActionResult,
-} from '../services/authClient';
-import {
-  createHousehold,
-  fetchCurrentMembership,
-  type CurrentMembership,
-} from '../services/householdClient';
+import { AuthSessionUnavailableError, type AuthActionResult } from '../services/authClient';
+import { createHousehold, type CurrentMembership } from '../services/householdClient';
 import {
   createChild,
   fetchFamilyMembers,
@@ -27,7 +24,6 @@ import {
   type FamilyMember,
 } from '../services/familyClient';
 import {
-  fetchMyProfile,
   ProfileColor,
   ProfileColorHex,
   saveMyProfile,
@@ -37,7 +33,6 @@ import {
 import {
   AppRouteName,
   bootstrapScreenForRoute,
-  isPublicRouteName,
   type AppRouteName as AppRouteNameType,
   type BootstrapPageScreen,
 } from '../router/routes';
@@ -62,6 +57,27 @@ const routeByAuthScreen = {
 
 const route = useRoute();
 const router = useRouter();
+const session = useSessionController();
+let pageIdentityVersion = session.identityVersion.value;
+let disposed = false;
+const initialState = session.state.value;
+const initialContext = initialState.kind === 'ready' ? initialState.context : null;
+function isPageCurrent() {
+  return !disposed && pageIdentityVersion === session.identityVersion.value;
+}
+onBeforeUnmount(() => {
+  disposed = true;
+  clearSecrets();
+  membership.value = null;
+  profile.value = null;
+  familyMembers.value = [];
+  displayName.value = '';
+  profileColor.value = '';
+  householdName.value = '';
+  username.value = '';
+  email.value = '';
+  clearChildForm();
+});
 
 const supportedTimezones = availableIanaTimezones();
 const copy = messages.bootstrap;
@@ -72,13 +88,26 @@ const profileColors = Object.values(ProfileColor).map((color) => ({
   hex: ProfileColorHex[color],
   label: color.charAt(0) + color.slice(1).toLowerCase(),
 }));
-const transientScreen = ref<TransientScreen | null>(DEFAULT_TRANSIENT_SCREEN);
+const transientScreen = ref<TransientScreen | null>(
+  session.state.value.kind === 'ready' || session.state.value.kind === 'signed-out'
+    ? null
+    : DEFAULT_TRANSIENT_SCREEN,
+);
 const screen = computed<Screen>(() => {
-  const routeName = route.name as AppRouteNameType;
+  const routeName = (route.name ?? AppRouteName.signIn) as AppRouteNameType;
   return transientScreen.value ?? bootstrapScreenForRoute(routeName) ?? DEFAULT_TRANSIENT_SCREEN;
 });
 const busy = ref(false);
-const status = ref('');
+let initialStatus = '';
+if (initialState.kind === 'signed-out') {
+  if (initialState.reason === 'explicit') initialStatus = copy.signedOut;
+  if (initialState.reason === 'upgrade') initialStatus = messages.session.upgradeHelp;
+  if (initialState.reason === 'sign-out-incomplete')
+    initialStatus = messages.session.signOutIncomplete;
+  if (initialState.reason === 'ended' || initialState.reason === 'credentials-stale')
+    initialStatus = copy.sessionEnded;
+}
+const status = ref(initialStatus);
 const statusIsError = ref(false);
 const username = ref('');
 const password = ref('');
@@ -88,10 +117,20 @@ const code = ref('');
 const newPassword = ref('');
 const householdName = ref('');
 const timezone = ref(browserTimezone());
-const membership = ref<CurrentMembership | null>(null);
-const displayName = ref('');
-const profileColor = ref<ProfileColorId | ''>('');
-const profile = ref<Profile | null>(null);
+const membership = ref<CurrentMembership | null>(
+  (initialContext && initialContext.kind !== 'unattached' ? initialContext.membership : null) ??
+    null,
+);
+const displayName = ref(
+  (initialContext?.kind === 'active' ? initialContext.profile.displayName : undefined) ?? '',
+);
+const profileColor = ref<ProfileColorId | ''>(
+  (initialContext?.kind === 'active' ? initialContext.profile.color : undefined) ?? '',
+);
+const profile = ref<Profile | null>(
+  (initialContext?.kind === 'active' ? initialContext.profile : null) ?? null,
+);
+let profileDraftInitialized = initialContext?.kind === 'active';
 const familyMembers = ref<FamilyMember[]>([]);
 const childUsername = ref('');
 const childDisplayName = ref('');
@@ -117,7 +156,6 @@ const resetTarget = computed(() =>
 );
 let idempotencyKey = globalThis.crypto.randomUUID();
 let childIdempotencyKey = globalThis.crypto.randomUUID();
-let authClient: AuthClient | null = null;
 
 watch([householdName, timezone], () => {
   idempotencyKey = globalThis.crypto.randomUUID();
@@ -140,8 +178,17 @@ watch(screen, (currentScreen) => {
 watch(
   () => route.fullPath,
   () => {
+    clearSecrets();
     const routeName = route.name;
     if (routeName === AppRouteName.profile) prepareProfileEdit();
+    if (
+      routeName === AppRouteName.family &&
+      !busy.value &&
+      transientScreen.value === null &&
+      session.state.value.kind === 'ready'
+    ) {
+      void run(async () => loadFamilyManagement(session.requestContext()));
+    }
     if (routeName !== AppRouteName.newChild) clearChildForm();
     replacementChildPassword.value = '';
     childResetBlocked.value = false;
@@ -156,30 +203,75 @@ watch(
   },
 );
 
-onMounted(async () => {
-  try {
-    authClient = new AuthClient(loadAuthConfig());
-    const session = await authClient.restoreSession();
-    if (session) await resolveMembership(session.idToken);
-    else {
-      transientScreen.value = null;
-      if (!isPublicRouteName(route.name as AppRouteNameType)) {
-        await navigate(AppRouteName.signIn, true);
-      }
-    }
-  } catch {
-    status.value = messages.generic.unexpectedError;
-    statusIsError.value = true;
-    await clearTransientScreenAndNavigate(AppRouteName.signIn);
+watch(session.state, (state) => {
+  if (!isPageCurrent()) return;
+  if (state.kind === 'signed-out' && state.reason === 'explicit' && !status.value)
+    status.value = copy.signedOut;
+  if (state.kind === 'signed-out' && state.reason === 'sign-out-incomplete')
+    status.value = messages.session.signOutIncomplete;
+  if (state.kind !== 'ready') return;
+  const previousProfile = profile.value;
+  const hasDraft =
+    previousProfile &&
+    (displayName.value !== previousProfile.displayName ||
+      profileColor.value !== previousProfile.color);
+  membership.value = state.context.kind === 'unattached' ? null : state.context.membership;
+  // Keep an unsaved draft's original version so background updates cannot silently
+  // turn a stale edit into a last-write-wins save. Cancel adopts the latest context.
+  if (hasDraft) return;
+  profile.value = state.context.kind === 'active' ? state.context.profile : null;
+  if (profile.value) {
+    displayName.value = profile.value.displayName;
+    profileColor.value = profile.value.color;
   }
 });
 
+onMounted(async () => {
+  await session.initialize();
+  if (!isPageCurrent()) return;
+  if (session.state.value.kind === 'ready') await run(adoptSessionContext);
+  else {
+    transientScreen.value = null;
+    const current = session.state.value;
+    if (current.kind === 'signed-out') {
+      if (current.reason === 'upgrade') status.value = messages.session.upgradeHelp;
+      if (current.reason === 'explicit') status.value = copy.signedOut;
+      if (current.reason === 'ended' || current.reason === 'credentials-stale')
+        status.value = copy.sessionEnded;
+      if (current.reason === 'sign-out-incomplete')
+        status.value = messages.session.signOutIncomplete;
+    }
+  }
+  await focusRouteHeading();
+});
+
+async function adoptSessionContext(): Promise<void> {
+  if (!isPageCurrent()) return;
+  const state = session.state.value;
+  transientScreen.value = null;
+  if (state.kind !== 'ready') return;
+  const context = state.context;
+  membership.value = context.kind === 'unattached' ? null : context.membership;
+  profile.value = context.kind === 'active' ? context.profile : null;
+  if (context.kind === 'unattached') {
+    await navigate(AppRouteName.householdSetup, true);
+    return;
+  }
+  if (context.kind === 'profile-required') {
+    await navigate(AppRouteName.profileSetup, true);
+    return;
+  }
+  await showResolvedProfile(session.requestContext());
+}
+
 async function signIn(): Promise<void> {
   await run(async () => {
-    const result = await client().signIn(username.value, password.value);
+    const result = await session.signIn(username.value, password.value);
+    if (result.kind === 'cancelled' || disposed) return;
     if (result.kind === 'error') return showError(result);
     password.value = '';
-    await resolveMembership(result.session.idToken);
+    pageIdentityVersion = session.identityVersion.value;
+    await adoptSessionContext();
   });
 }
 
@@ -249,45 +341,8 @@ async function finishRecovery(): Promise<void> {
   });
 }
 
-async function resolveMembership(idToken: string): Promise<void> {
-  transientScreen.value = 'membership-loading';
-  const result = await fetchCurrentMembership(idToken);
-  if (result.kind === 'error') {
-    if (!result.recoverable) signOut(result.message);
-    else {
-      status.value = result.message;
-      statusIsError.value = true;
-      await clearTransientScreenAndNavigate(AppRouteName.signIn);
-    }
-    return;
-  }
-  membership.value = result.data.membership;
-  applyMembershipContext(membership.value);
-  if (!membership.value) {
-    await clearTransientScreenAndNavigate(AppRouteName.householdSetup);
-    return;
-  }
-  await resolveProfile(idToken);
-}
-
-async function resolveProfile(idToken: string): Promise<void> {
-  transientScreen.value = 'profile-loading';
-  const result = await fetchMyProfile(idToken);
-  if (result.kind === 'error') {
-    if (!result.recoverable) {
-      signOut(result.message);
-      return;
-    }
-    status.value = profileCopy.loadFailed;
-    statusIsError.value = true;
-    transientScreen.value = 'profile-load-error';
-    return;
-  }
-  profile.value = result.data.profile;
-  if (!profile.value) {
-    await clearTransientScreenAndNavigate(AppRouteName.profileSetup);
-    return;
-  }
+async function showResolvedProfile(idToken: CredentialSource): Promise<void> {
+  if (!profile.value) return;
   applyProfileTone(profile.value.color);
   if (membership.value?.role === 'child' && route.name !== AppRouteName.profile) {
     await clearTransientScreenAndNavigate(AppRouteName.todos);
@@ -310,9 +365,22 @@ async function resolveProfile(idToken: string): Promise<void> {
   await loadFamilyManagement(idToken);
 }
 
-async function loadFamilyManagement(idToken: string, preserveRoute = false): Promise<void> {
+async function loadFamilyManagement(
+  idToken: CredentialSource,
+  preserveRoute = false,
+): Promise<void> {
+  const requestedRoute = route.fullPath;
+  const readingCurrentFamilyRoute =
+    route.name === AppRouteName.family || route.name === AppRouteName.resetChildPassword;
   transientScreen.value = 'family-loading';
   const result = await fetchFamilyMembers(idToken);
+  if (!isPageCurrent()) return;
+  // An existing Family read must not override Back/Forward. Onboarding can
+  // deliberately resolve into Family while its first directory read is pending.
+  if (readingCurrentFamilyRoute && route.fullPath !== requestedRoute) {
+    transientScreen.value = null;
+    return;
+  }
   if (result.kind === 'error') {
     if (!result.recoverable) {
       signOut(result.message);
@@ -350,9 +418,10 @@ async function submitChildPasswordReset(): Promise<void> {
 }
 
 async function applyChildPasswordReset(memberId: string): Promise<void> {
-  const token = client().requireIdToken();
+  const token = session.requestContext();
   const result = await resetChildPassword(token, memberId, replacementChildPassword.value);
   replacementChildPassword.value = '';
+  if (!isPageCurrent()) return;
   if (result.kind === 'error') {
     await showChildResetError(result);
     return;
@@ -391,12 +460,13 @@ async function submitHousehold(): Promise<void> {
     return;
   }
   await run(async () => {
-    const token = client().requireIdToken();
+    const token = session.requestContext();
     const result = await createHousehold(token, {
       name: householdName.value,
       timezone: timezone.value,
       idempotencyKey,
     });
+    if (!isPageCurrent()) return;
     if (result.kind === 'error') {
       for (const error of result.fieldErrors ?? []) fieldError.value[error.field] = error.message;
       status.value = result.message;
@@ -406,10 +476,11 @@ async function submitHousehold(): Promise<void> {
       return;
     }
     membership.value = result.data.membership;
+    session.applyConfirmedMembership(membership.value);
     applyMembershipContext(membership.value);
     status.value = copy.created;
     statusIsError.value = false;
-    await resolveProfile(token);
+    await adoptSessionContext();
   });
 }
 
@@ -425,12 +496,13 @@ async function submitProfile(): Promise<void> {
     return;
   }
   await run(async () => {
-    const token = client().requireIdToken();
+    const token = session.requestContext();
     const result = await saveMyProfile(token, {
       displayName: trimmedDisplayName,
       color: profileColor.value as ProfileColorId,
       version: profile.value?.version ?? 0,
     });
+    if (!isPageCurrent()) return;
     if (result.kind === 'error') {
       for (const error of result.fieldErrors ?? []) fieldError.value[error.field] = error.message;
       status.value = result.message;
@@ -439,6 +511,7 @@ async function submitProfile(): Promise<void> {
       return;
     }
     profile.value = result.data.profile;
+    session.applyConfirmedProfile(profile.value);
     status.value =
       route.name === AppRouteName.profile ? familyCopy.profileSaved : profileCopy.saved;
     statusIsError.value = false;
@@ -451,19 +524,28 @@ async function submitProfile(): Promise<void> {
 }
 
 async function retryProfile(): Promise<void> {
-  await run(async () => resolveProfile(client().requireIdToken()));
+  await run(async () => {
+    await session.initialize();
+    await adoptSessionContext();
+  });
 }
 
 function prepareProfileEdit(): void {
   if (!profile.value) return;
+  if (
+    profileDraftInitialized &&
+    (displayName.value !== profile.value.displayName || profileColor.value !== profile.value.color)
+  )
+    return;
   displayName.value = profile.value.displayName;
   profileColor.value = profile.value.color;
+  profileDraftInitialized = true;
   fieldError.value = {};
 }
 
 async function retryFamilyManagement(): Promise<void> {
   await run(async () =>
-    loadFamilyManagement(client().requireIdToken(), route.name === AppRouteName.resetChildPassword),
+    loadFamilyManagement(session.requestContext(), route.name === AppRouteName.resetChildPassword),
   );
 }
 
@@ -503,9 +585,10 @@ async function showChildValidationFailure(): Promise<void> {
 }
 
 async function provisionChild(input: ChildFormInput): Promise<void> {
-  const token = client().requireIdToken();
+  const token = session.requestContext();
   const result = await createChild(token, { ...input, idempotencyKey: childIdempotencyKey });
   childPassword.value = '';
+  if (!isPageCurrent()) return;
   if (result.kind === 'error') {
     await showChildProvisioningError(result);
     return;
@@ -530,6 +613,13 @@ async function showChildProvisioningError(
 }
 
 function cancelProfileEdit(): void {
+  const state = session.state.value;
+  if (state.kind === 'ready' && state.context.kind === 'active')
+    profile.value = state.context.profile;
+  if (profile.value) {
+    displayName.value = profile.value.displayName;
+    profileColor.value = profile.value.color;
+  }
   fieldError.value = {};
 }
 
@@ -542,13 +632,9 @@ function clearChildForm(): void {
 }
 
 function signOut(message = copy.signedOut): void {
-  // This app has no remote sign-out endpoint. Local private state must clear
-  // even if Cognito's local SDK cleanup unexpectedly throws.
-  try {
-    authClient?.signOut();
-  } finally {
-    clearPrivateState(message);
-  }
+  session.signOut();
+  pageIdentityVersion = session.identityVersion.value;
+  clearPrivateState(message);
 }
 
 function clearPrivateState(message: string): void {
@@ -562,7 +648,6 @@ function clearPrivateState(message: string): void {
   displayName.value = '';
   profileColor.value = '';
   profile.value = null;
-  clearProfileTone();
   familyMembers.value = [];
   clearChildForm();
   replacementChildPassword.value = '';
@@ -588,7 +673,7 @@ function chooseScreen(next: Extract<BootstrapPageScreen, 'signin' | 'register' |
 }
 
 async function navigate(routeName: AppRouteNameType, replace = false): Promise<void> {
-  if (route.name === routeName) return;
+  if (!isPageCurrent() || route.name === routeName) return;
   if (replace) await router.replace({ name: routeName });
   else await router.push({ name: routeName });
 }
@@ -607,6 +692,13 @@ async function run(action: () => Promise<void>): Promise<void> {
   try {
     await action();
   } catch (error) {
+    if (!isPageCurrent()) return;
+    if (error instanceof SessionOperationCancelledError) return;
+    if (error instanceof SessionCredentialsUnavailableError) {
+      status.value = messages.generic.networkError;
+      statusIsError.value = true;
+      return;
+    }
     if (error instanceof AuthSessionUnavailableError) {
       signOut(copy.sessionEnded);
       return;
@@ -637,9 +729,19 @@ async function validatePassword(
   return false;
 }
 
-function client(): AuthClient {
-  if (!authClient) authClient = new AuthClient(loadAuthConfig());
-  return authClient;
+const SESSION_ACCOUNT_ADAPTER_MISSING = 'SESSION_ACCOUNT_ADAPTER_MISSING';
+function client() {
+  if (!session.account) throw new Error(SESSION_ACCOUNT_ADAPTER_MISSING);
+  return session.account;
+}
+
+function clearSecrets(): void {
+  password.value = '';
+  gatePassword.value = '';
+  code.value = '';
+  newPassword.value = '';
+  childPassword.value = '';
+  replacementChildPassword.value = '';
 }
 
 function browserTimezone(): string {
@@ -936,7 +1038,7 @@ async function focusRouteHeading(): Promise<void> {
           :aria-describedby="fieldError.color ? 'profile-color-error' : undefined"
         >
           <legend class="body-strong font-medium">{{ profileCopy.color }}</legend>
-          <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div class="profile-color-options mt-2">
             <label
               v-for="color in profileColors"
               :key="color.id"
@@ -1075,7 +1177,7 @@ async function focusRouteHeading(): Promise<void> {
       <div class="profile-color-preview" :data-profile-color="childColor || undefined">
         <fieldset class="profile-color-preview__fieldset">
           <legend class="body-strong font-medium">{{ profileCopy.color }}</legend>
-          <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div class="profile-color-options mt-2">
             <label
               v-for="color in profileColors"
               :key="color.id"

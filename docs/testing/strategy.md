@@ -49,7 +49,8 @@ npm run setup:local-cognito
 
 The setup script creates or reuses a local username-based user pool, a normal PWA client, and a registration-only client; it creates a local-only verification account and writes non-secret endpoint/pool/client values to ignored `.env.local`. The default account is `localdev` with password `LocalDevPass123!`; this is a disposable local-only credential and MUST NOT be used for a real Cognito pool.
 
-Then start the app and local API in a separate terminal:
+After setup finishes, stop the bootstrap-only `dev:cognito` process with Ctrl+C.
+Then start the app and local API; `dev:full` owns its own emulator process on the same port:
 
 ```sh
 npm run dev:full
@@ -117,14 +118,17 @@ Components cover form labels, keyboard behavior, focus movement, live-region ann
 
 Critical flows run through the browser against a local application and local API/auth test environment. They cover:
 
-- Production registration gate including closed registration, Cognito email confirmation/resend, sign-in, current-tab restoration from `sessionStorage`, Forgot Password, sign-out, household creation, and onboarding. Browser tests assert that tokens never enter `localStorage`, IndexedDB, URLs, or service-worker caches.
+- Production registration gate including closed registration, Cognito email confirmation/resend, sign-in, shared browser-account restoration from versioned, scoped auth storage, Forgot Password, sign-out, household creation, and onboarding. The sole persistence exception is allowlisted SDK authentication material in the owned localStorage namespace (ADR 0007). Browser and unit tests reject private profile/directory persistence, credential-bearing URLs/history/channel messages/logs, IndexedDB, and service-worker caches. Shared-storage tests use synthetic credentials with trace/video/screenshots disabled.
 - Parent member creation/reset/removal and self-profile editing.
 - Pending-parent setup-code activation, built-in Cognito invitation resend/change/cancel, and
   parent-only recovery-email replacement while the previous verified value remains active.
 - Canonical route guards, Back/Forward, reload/deep links, secret-free history, and the pre-Todo child `/todos` landing. The placeholder test proves that it makes no Todo API request and exposes no Todo action.
 - Parent Todo assignment, child completion, parent history, undo/reopen, archive/restore, and delete confirmation/cancellation.
 - Label selection/creation/filtering and recurrence current/history behavior as those capabilities ship.
-- Session expiry, access removal, network failure, stale conflict, and safe retry.
+- Silent renewal, expiry, access removal, network failure, stale conflict, and safe retry without mutation replay. Shared-account tests cover simultaneous sign-ins, late SDK writes, peer sign-out/replacement, suspended pages, notification fallback, persistent-profile return, and separate-profile isolation.
+- Real local-auth smoke covers parent onboarding, child creation/return visits, REFRESH_TOKEN_AUTH, and multi-tab sign-out. The emulator explicitly refuses unsupported password-reset freshness parity; no security gate is bypassed to make that flow pass.
+- Automated axe/keyboard/reduced-motion checks and screenshot review supplement actual browser zoom and named screen-reader speech testing. Record human-only evidence separately; viewport resizing or CSS text enlargement does not establish 200% browser zoom.
+- Development controller diagnostics contain only allowlisted operation/outcome/duration fields. Unit privacy canaries verify that raw provider errors, tokens, identity, and private context cannot reach the diagnostic sink. Production introduces no telemetry.
 
 At minimum, critical specs run at 390 x 844, 820 x 1180, and 1440 x 900 CSS pixels. Responsive/a11y suites additionally verify 320 CSS-pixel reflow and 200 percent zoom. Browser projects include Chromium, Firefox, and WebKit. Tests use stable role/name locators instead of CSS implementation details.
 

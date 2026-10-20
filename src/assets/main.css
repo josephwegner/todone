@@ -167,12 +167,14 @@ body {
   }
   .field:focus {
     border-color: rgb(var(--td-focus));
-    outline: 3px solid rgb(var(--td-focus) / 0.25);
+    outline: 3px solid rgb(var(--td-focus));
     outline-offset: 1px;
   }
   .primary,
   .secondary,
   .link {
+    max-width: 100%;
+    overflow-wrap: anywhere;
     min-height: 2.75rem;
     font-weight: 650;
   }
@@ -201,7 +203,7 @@ body {
   .primary:focus-visible,
   .secondary:focus-visible,
   .link:focus-visible {
-    outline: 3px solid rgb(var(--td-focus) / 0.3);
+    outline: 3px solid rgb(var(--td-focus));
     outline-offset: 2px;
   }
   .primary:disabled,
@@ -218,10 +220,16 @@ body {
     color: rgb(var(--td-danger));
     font-size: 0.875rem;
   }
+  .profile-color-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+    gap: 0.5rem;
+  }
   .profile-color-option {
     display: flex;
     min-height: 2.75rem;
     min-width: 0;
+    flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem;
     padding: 0.45rem 0.7rem;
@@ -232,7 +240,7 @@ body {
   }
   .profile-color-option:focus-within {
     border-color: rgb(var(--td-focus));
-    outline: 3px solid rgb(var(--td-focus) / 0.2);
+    outline: 3px solid rgb(var(--td-focus));
     outline-offset: 1px;
   }
   .profile-color-option--selected {
@@ -243,6 +251,7 @@ body {
     background: rgb(var(--td-profile-light)) !important;
   }
   .profile-color-option__label {
+    flex: 1 1 auto;
     min-width: 0;
     overflow-wrap: anywhere;
   }
@@ -299,6 +308,9 @@ body {
   }
   .family-page {
     display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+    overflow-wrap: anywhere;
     gap: 1.5rem;
   }
   .family-page__heading {

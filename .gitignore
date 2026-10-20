@@ -29,3 +29,6 @@ terraform/*.tfplan
 # .cognito/config.json IS committed (non-secret local dev tool settings).
 .cognito/db/
 
+
+.agents/
+.opencode/

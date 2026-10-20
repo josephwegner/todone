@@ -2,6 +2,38 @@ import { describe, expect, it, vi } from 'vitest';
 import { createHousehold, fetchCurrentMembership } from '../../services/householdClient';
 
 describe('household API client', () => {
+  it.each([
+    [403, 'MEMBERSHIP_PENDING_ACTIVATION', 'pending-activation'],
+    [403, 'MEMBERSHIP_INACTIVE', 'inactive'],
+    [500, 'MEMBERSHIP_INCONSISTENT', 'inconsistent'],
+    [401, 'SESSION_REAUTHENTICATION_REQUIRED', 'credentials-stale'],
+  ])(
+    'preserves the caller outcome for %s %s without calling it unattached',
+    async (status, code, failure) => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: false,
+        status,
+        json: async () => ({ error: { code } }),
+      });
+      expect(await fetchCurrentMembership('token', fetchMock)).toMatchObject({
+        kind: 'error',
+        failure,
+      });
+    },
+  );
+
+  it.each([
+    [503, 'INTERNAL_ERROR'],
+    [500, 'MEMBERSHIP_INACTIVE'],
+    [403, 'UNKNOWN_CODE'],
+  ])('does not guess a membership state for %s %s', async (status, code) => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: false, status, json: async () => ({ error: { code } }) });
+    const result = await fetchCurrentMembership('token', fetchMock);
+    expect(result).toMatchObject({ kind: 'error', recoverable: true });
+    expect(result).not.toHaveProperty('failure');
+  });
   it('uses a bearer header and no-store for current membership', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

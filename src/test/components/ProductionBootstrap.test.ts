@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMemoryHistory } from 'vue-router';
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
 
 enableAutoUnmount(afterEach);
@@ -58,12 +59,25 @@ vi.mock('../../services/familyClient', () => ({
   resetChildPassword,
 }));
 
+const { default: SessionRoot } = await import('../../components/SessionRoot.vue');
 const { default: ProductionBootstrap } = await import('../../components/ProductionBootstrap.vue');
-const { router } = await import('../../router');
+const { createAppRouter } = await import('../../router');
+const { AuthClient } = await import('../../services/authClient');
+const { createMemoryAuthStorage } = await import('../../session/authStorage');
+const { createAuthSessionProvider } = await import('../../session/authSessionProvider');
+const { createApplicationSession } = await import('../../session/appSession');
+const { createSessionController } = await import('../../session/sessionController');
+const { sessionControllerKey } = await import('../../session/injection');
+let router: ReturnType<typeof createAppRouter>;
+let session: ReturnType<typeof createApplicationSession>;
 const { AppRouteName } = await import('../../router/routes');
 
 function mountBootstrap(options: Record<string, unknown> = {}) {
-  return mount(ProductionBootstrap, { global: { plugins: [router] }, ...options });
+  if (!router.currentRoute.value.name) void router.push({ name: AppRouteName.signIn });
+  return mount(ProductionBootstrap, {
+    global: { plugins: [router], provide: { [sessionControllerKey as symbol]: session } },
+    ...options,
+  });
 }
 
 const membership = {
@@ -78,7 +92,7 @@ const membership = {
 
 describe('ProductionBootstrap', () => {
   beforeEach(async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     restoreSession.mockResolvedValue(null);
     fetchCurrentMembership.mockResolvedValue({ kind: 'success', data: { membership: null } });
     fetchMyProfile.mockResolvedValue({ kind: 'success', data: { profile: null } });
@@ -100,7 +114,17 @@ describe('ProductionBootstrap', () => {
     });
     getIdToken.mockReturnValue('id-token');
     requireIdToken.mockReturnValue('id-token');
-    await router.push({ name: AppRouteName.signIn });
+    const account = new AuthClient(
+      {
+        userPoolId: 'pool',
+        clientId: 'client',
+        registrationClientId: 'registration-client',
+        region: 'us-east-1',
+      },
+      createMemoryAuthStorage(),
+    );
+    session = createApplicationSession({ provider: createAuthSessionProvider(account), account });
+    router = createAppRouter(session, createMemoryHistory());
   });
 
   it('shows restoration without flashing signed-out content, then renders sign in', async () => {
@@ -115,11 +139,35 @@ describe('ProductionBootstrap', () => {
   });
 
   it('restores the same-tab session and gates an unattached account at household creation', async () => {
-    restoreSession.mockResolvedValue({ idToken: 'restored-token' });
+    restoreSession.mockResolvedValue({
+      idToken: 'restored-token',
+      accessToken: 'access',
+      expiresAt: new Date('2030-01-01'),
+    });
     const wrapper = mountBootstrap();
     await flushPromises();
-    expect(fetchCurrentMembership).toHaveBeenCalledWith('restored-token');
+    expect(fetchCurrentMembership).toHaveBeenCalledWith(
+      expect.objectContaining({ credentials: expect.any(Function) }),
+      expect.any(Function),
+    );
     expect(wrapper.get('h2').text()).toBe('Create your household');
+  });
+
+  it('preserves the one-time legacy-upgrade explanation after page startup', async () => {
+    const account = session.account;
+    session = createSessionController({
+      account,
+      provider: {
+        restore: async () => ({ kind: 'signed-out', reason: 'upgrade' }),
+        signIn,
+        signOut,
+      },
+      readContext: vi.fn(),
+    });
+    router = createAppRouter(session, createMemoryHistory());
+    const wrapper = mountBootstrap();
+    await flushPromises();
+    expect(wrapper.text()).toContain('Sign in once more after this update.');
   });
 
   it('registers, clears secret fields, confirms email, and supports resend', async () => {
@@ -212,7 +260,11 @@ describe('ProductionBootstrap', () => {
   });
 
   it('creates a child from the canonical parent route and clears its password after submission', async () => {
-    restoreSession.mockResolvedValue({ idToken: 'token' });
+    restoreSession.mockResolvedValue({
+      idToken: 'token',
+      accessToken: 'access',
+      expiresAt: new Date('2030-01-01'),
+    });
     fetchCurrentMembership.mockResolvedValue({ kind: 'success', data: { membership } });
     fetchMyProfile.mockResolvedValue({
       kind: 'success',
@@ -248,7 +300,7 @@ describe('ProductionBootstrap', () => {
     await flushPromises();
 
     expect(createChild).toHaveBeenCalledWith(
-      'id-token',
+      expect.objectContaining({ credentials: expect.any(Function) }),
       expect.objectContaining({
         username: 'child-one',
         displayName: 'Child One',
@@ -261,7 +313,11 @@ describe('ProductionBootstrap', () => {
   });
 
   async function openChildReset() {
-    restoreSession.mockResolvedValue({ idToken: 'token' });
+    restoreSession.mockResolvedValue({
+      idToken: 'token',
+      accessToken: 'access',
+      expiresAt: new Date('2030-01-01'),
+    });
     fetchCurrentMembership.mockResolvedValue({ kind: 'success', data: { membership } });
     fetchMyProfile.mockResolvedValue({
       kind: 'success',
@@ -317,7 +373,11 @@ describe('ProductionBootstrap', () => {
     await field.setValue('Replacement1!');
     await wrapper.get('form').trigger('submit');
     await flushPromises();
-    expect(resetChildPassword).toHaveBeenCalledWith('id-token', 'child', 'Replacement1!');
+    expect(resetChildPassword).toHaveBeenCalledWith(
+      expect.objectContaining({ credentials: expect.any(Function) }),
+      'child',
+      'Replacement1!',
+    );
     expect(router.currentRoute.value.name).toBe(AppRouteName.family);
     expect(wrapper.text()).toContain('Child password reset.');
     wrapper.unmount();
@@ -416,7 +476,11 @@ describe('ProductionBootstrap', () => {
   });
 
   it('validates household name with focus, then requires profile setup after creation', async () => {
-    restoreSession.mockResolvedValue({ idToken: 'token' });
+    restoreSession.mockResolvedValue({
+      idToken: 'token',
+      accessToken: 'access',
+      expiresAt: new Date('2030-01-01'),
+    });
     createHousehold.mockResolvedValue({ kind: 'success', data: { membership } });
     const wrapper = mountBootstrap({ attachTo: document.body });
     await flushPromises();
@@ -431,16 +495,24 @@ describe('ProductionBootstrap', () => {
     await wrapper.get('form').trigger('submit');
     await flushPromises();
     expect(createHousehold).toHaveBeenCalledWith(
-      'id-token',
+      expect.objectContaining({ credentials: expect.any(Function) }),
       expect.objectContaining({ name: 'River House', timezone: 'America/Chicago' }),
     );
-    expect(fetchMyProfile).toHaveBeenCalledWith('id-token');
+    expect(fetchMyProfile).not.toHaveBeenCalled();
+    expect(session.state.value).toMatchObject({
+      kind: 'ready',
+      context: { kind: 'profile-required' },
+    });
     expect(wrapper.get('h2').text()).toBe('Set up your profile');
     wrapper.unmount();
   });
 
   it('requires a display name and palette choice, then creates the first profile', async () => {
-    restoreSession.mockResolvedValue({ idToken: 'token' });
+    restoreSession.mockResolvedValue({
+      idToken: 'token',
+      accessToken: 'access',
+      expiresAt: new Date('2030-01-01'),
+    });
     fetchCurrentMembership.mockResolvedValue({ kind: 'success', data: { membership } });
     saveMyProfile.mockResolvedValue({
       kind: 'success',
@@ -466,33 +538,140 @@ describe('ProductionBootstrap', () => {
     });
     await wrapper.get('form').trigger('submit');
     await flushPromises();
-    expect(saveMyProfile).toHaveBeenCalledWith('id-token', {
-      displayName: 'River',
-      color: 'LAKE',
-      version: 0,
-    });
+    expect(saveMyProfile).toHaveBeenCalledWith(
+      expect.objectContaining({ credentials: expect.any(Function) }),
+      {
+        displayName: 'River',
+        color: 'LAKE',
+        version: 0,
+      },
+    );
     expect(wrapper.text()).toContain('Family management');
     wrapper.unmount();
   });
 
   it('offers an explicit retry when profile loading has a recoverable error', async () => {
-    restoreSession.mockResolvedValue({ idToken: 'token' });
+    restoreSession.mockResolvedValue({
+      idToken: 'token',
+      accessToken: 'access',
+      expiresAt: new Date('2030-01-01'),
+    });
     fetchCurrentMembership.mockResolvedValue({ kind: 'success', data: { membership } });
     fetchMyProfile
       .mockResolvedValueOnce({ kind: 'error', message: 'Offline', recoverable: true })
       .mockResolvedValueOnce({ kind: 'success', data: { profile: null } });
-    const wrapper = mountBootstrap();
+    void router.push({ name: AppRouteName.signIn });
+    const wrapper = mount(SessionRoot, {
+      global: { plugins: [router], provide: { [sessionControllerKey as symbol]: session } },
+    });
     await flushPromises();
-    expect(wrapper.text()).toContain('We could not load your profile');
+    expect(wrapper.text()).toContain('We couldn’t open your session');
     const initialProfileReads = fetchMyProfile.mock.calls.length;
-    await wrapper.get('button.primary').trigger('click');
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Retry')!
+      .trigger('click');
     await flushPromises();
     expect(fetchMyProfile.mock.calls.length).toBeGreaterThan(initialProfileReads);
     expect(wrapper.get('h2').text()).toBe('Set up your profile');
   });
 
+  it.each([false, true])(
+    'renews Family Retry after expiry without sign-out (transient renewal failure: %s)',
+    async (transientFailure) => {
+      let now = Date.now();
+      const credentials = {
+        idToken: 'original-token',
+        accessToken: 'access',
+        expiresAt: new Date(now + 120_000),
+      };
+      const renew = vi.fn().mockImplementation(async () => ({
+        kind: 'usable',
+        credentials: {
+          ...credentials,
+          idToken: 'renewed-token',
+          expiresAt: new Date(now + 3600_000),
+        },
+      }));
+      if (transientFailure)
+        renew.mockResolvedValueOnce({ kind: 'error', failure: 'provider-unavailable' });
+      const providerSignOut = vi.fn();
+      const previousSession = session;
+      session = createSessionController({
+        account: previousSession.account,
+        provider: {
+          restore: async () => ({ kind: 'usable', credentials }),
+          renew,
+          signIn: vi.fn(),
+          signOut: providerSignOut,
+        },
+        clock: { now: () => now },
+        foreground: () => false,
+        readContext: async () => ({
+          kind: 'success',
+          context: {
+            kind: 'active',
+            membership: { ...membership, username: 'parent-one' },
+            profile: { memberId: 'member-one', displayName: 'River', color: 'PINE', version: 1 },
+          },
+        }),
+      });
+      previousSession.dispose();
+      const actualFamilyClient = await vi.importActual<
+        typeof import('../../services/familyClient')
+      >('../../services/familyClient');
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(new Response('{}', { status: 503 }))
+        .mockImplementation(
+          async () => new Response(JSON.stringify({ members: [] }), { status: 200 }),
+        );
+      fetchFamilyMembers.mockImplementation((source) =>
+        actualFamilyClient.fetchFamilyMembers(source, fetchImpl),
+      );
+      router = createAppRouter(session, createMemoryHistory());
+      await router.push({ name: AppRouteName.family });
+      const wrapper = mountBootstrap();
+      await flushPromises();
+      expect(wrapper.text()).toContain('Try again');
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      now += 121_000;
+      const retry = () =>
+        wrapper
+          .findAll('button')
+          .find((button) => button.text() === 'Try again')!
+          .trigger('click');
+      await retry();
+      await flushPromises();
+      if (transientFailure) {
+        expect(renew).toHaveBeenCalledTimes(1);
+        expect(fetchImpl).toHaveBeenCalledTimes(1);
+        expect(session.state.value.kind).toBe('ready');
+        expect(providerSignOut).not.toHaveBeenCalled();
+        expect(wrapper.text()).toContain('Try again');
+        await retry();
+        await flushPromises();
+      }
+      expect(renew).toHaveBeenCalledTimes(transientFailure ? 2 : 1);
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      expect(fetchImpl.mock.calls[1]![1]).toMatchObject({
+        headers: { authorization: 'Bearer renewed-token' },
+        cache: 'no-store',
+      });
+      expect(providerSignOut).not.toHaveBeenCalled();
+      expect(session.state.value.kind).toBe('ready');
+      expect(wrapper.get('h2').text()).toBe('Family management');
+      wrapper.unmount();
+      session.dispose();
+    },
+  );
+
   it('renders the family directory and lets a member edit only their own profile', async () => {
-    restoreSession.mockResolvedValue({ idToken: 'token' });
+    restoreSession.mockResolvedValue({
+      idToken: 'token',
+      accessToken: 'access',
+      expiresAt: new Date('2030-01-01'),
+    });
     fetchCurrentMembership.mockResolvedValue({ kind: 'success', data: { membership } });
     fetchMyProfile.mockResolvedValue({
       kind: 'success',
@@ -535,16 +714,23 @@ describe('ProductionBootstrap', () => {
     expect(wrapper.get('.profile-color-preview').attributes('data-profile-color')).toBe('LAKE');
     await wrapper.get('form').trigger('submit');
     await flushPromises();
-    expect(saveMyProfile).toHaveBeenCalledWith('id-token', {
-      displayName: 'River Two',
-      color: 'LAKE',
-      version: 1,
-    });
+    expect(saveMyProfile).toHaveBeenCalledWith(
+      expect.objectContaining({ credentials: expect.any(Function) }),
+      {
+        displayName: 'River Two',
+        color: 'LAKE',
+        version: 1,
+      },
+    );
     expect(wrapper.text()).toContain('Profile updated.');
   });
 
   it('keeps family actions beside the household heading rather than after the directory', async () => {
-    restoreSession.mockResolvedValue({ idToken: 'token' });
+    restoreSession.mockResolvedValue({
+      idToken: 'token',
+      accessToken: 'access',
+      expiresAt: new Date('2030-01-01'),
+    });
     fetchCurrentMembership.mockResolvedValue({ kind: 'success', data: { membership } });
     fetchMyProfile.mockResolvedValue({
       kind: 'success',
@@ -582,14 +768,22 @@ describe('ProductionBootstrap', () => {
   });
 
   it('offers the runtime IANA timezone list instead of a curated subset', async () => {
-    restoreSession.mockResolvedValue({ idToken: 'token' });
+    restoreSession.mockResolvedValue({
+      idToken: 'token',
+      accessToken: 'access',
+      expiresAt: new Date('2030-01-01'),
+    });
     const wrapper = mountBootstrap();
     await flushPromises();
     expect(wrapper.get('option[value="Africa/Abidjan"]').exists()).toBe(true);
   });
 
   it('clears private rendered state on sign-out', async () => {
-    restoreSession.mockResolvedValue({ idToken: 'token' });
+    restoreSession.mockResolvedValue({
+      idToken: 'token',
+      accessToken: 'access',
+      expiresAt: new Date('2030-01-01'),
+    });
     fetchCurrentMembership.mockResolvedValue({ kind: 'success', data: { membership } });
     fetchMyProfile.mockResolvedValue({
       kind: 'success',

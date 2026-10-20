@@ -32,6 +32,7 @@
 - Reuse shared request, response, repository, and validation utilities when they preserve an established contract. Record request IDs and outcomes for successful as well as failed API requests.
 - Prefer descriptive helper names over terse persistence or serialization abbreviations.
 - Treat sign-out as a fail-safe local privacy boundary: clear local credentials and private UI state even if an SDK cleanup call throws. Add server sign-out only when a server-side sign-out contract exists.
+- Pass session and storage dependencies explicitly through every SDK and authenticated-request entry point, including retries. Test the real adapter boundary when mocks could hide persistence or lifecycle behavior.
 
 ## OpenSpec implementation workflow
 

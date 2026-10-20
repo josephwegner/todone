@@ -56,6 +56,41 @@ flowchart LR
 
 The PWA is responsible for presentation, accessible interaction state, session initiation/restoration, and sending tokens only to the configured API origin. It may perform convenience validation, but server validation remains authoritative.
 
+`src/main.ts` creates one app session controller and injects it into the router and Vue tree.
+The controller owns credential restoration, current membership/profile context, identity
+generation, and sign-out. Router guards share its initialization and read ready context without
+calling Cognito, membership, or profile endpoints on navigation. The session root gates unresolved
+or denied context before private presentation and reconciles role/onboarding destinations.
+Bootstrap and Todo pages no longer construct providers or use a route-to-page handoff.
+Registration/confirmation/recovery use the same account adapter while secrets remain form-local.
+Confirmed household/profile writes update controller context directly.
+
+Pages own feature requests (such as the family directory), safe editable drafts, mutation
+idempotency keys, and destination focus. Those requests still use server authorization; controller
+state grants no access. Routine route changes may load feature data but never restart session
+resolution. Profile drafts survive ordinary in-app navigation and are discarded on explicit
+cancel or identity loss. Identity replacement/sign-out removes private surfaces and rejects old
+page results/navigation.
+
+The controller coalesces renewal within a 60-second expiry margin and checks foreground context
+at most once per five minutes. Authenticated requests acquire credentials when sending; safe
+reads have at most one renewal retry, while mutations are never automatically replayed. Transient
+background failures retain confirmed content and drafts; authoritative loss clears private state.
+
+A versioned localStorage adapter persists only allowlisted SDK authentication material for one
+account per origin/browser profile. Web Locks serialize short generation publication and cleanup;
+provider network waits remain outside locks. BroadcastChannel and storage events contain only
+change hints, never credentials or identity. Tabs reread authoritative storage on hints and before
+revealing private content after suspension. Immutable credential namespaces, generation checks,
+and aborted requests reject late results after account replacement or sign-out. Sign-out clears
+private UI immediately and publishes a shared tombstone even if SDK cleanup fails. Storage or
+coordination denial is an explicit recoverable error. Legacy tab credentials are cleared without
+promotion; see ADR 0007 and the deployment/rollback handoff.
+
+Development-only session diagnostics allow only operation, coarse outcome, and elapsed time.
+No provider messages, tokens, account identifiers, or private context enter those events; the
+production controller adds no remote telemetry.
+
 API Gateway is responsible for JWT authentication on protected routes. Lambda is responsible for input validation, household and role authorization, lifecycle constraints, conflict detection, privacy-safe errors, and persistence.
 
 Cognito's built-in sender owns first-parent verification/recovery and additional-parent invitation
@@ -86,6 +121,6 @@ See `docs/operations/deployment-rollback.md`, `docs/operations/backup-restore.md
 
 ## Scope boundaries
 
-The production bootstrap provides first-parent registration, recovery, tab-scoped session restoration, and the initial Household/parent Membership boundary. Later account-management, Todo, label, history, and recurrence behavior enters only with its owning OpenSpec change.
+The production bootstrap provides first-parent registration, recovery, shared browser-account restoration, and the initial Household/parent Membership boundary. Later account-management, Todo, label, history, and recurrence behavior enters only with its owning OpenSpec change.
 
 Native iOS packaging, offline mutation queues, third-party integrations, notifications, telemetry, behavioral tracking, and automatic production deployment are out of scope.

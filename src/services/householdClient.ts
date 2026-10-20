@@ -1,3 +1,11 @@
+import type { CredentialSource } from './apiClient';
+import {
+  currentMembershipFailure,
+  CurrentMembershipApi,
+  type MembershipFailure,
+} from '../../shared/membershipContract';
+import { APPLICATION_JSON, fetchAuthenticatedJson, HttpHeader, HttpMethod } from './apiClient';
+
 export interface CurrentMembership {
   memberId: string;
   username: string;
@@ -15,23 +23,19 @@ export type HouseholdResult =
       kind: 'error';
       message: string;
       recoverable: boolean;
+      failure?: MembershipFailure;
       fieldErrors?: Array<{ field: 'name' | 'timezone'; message: string }>;
     };
 
 export async function fetchCurrentMembership(
-  idToken: string,
+  idToken: CredentialSource,
   fetchImpl: typeof fetch = fetch,
 ): Promise<HouseholdResult> {
-  return request(
-    HouseholdApiRoute.currentMembership,
-    idToken,
-    { method: HTTP_METHOD.get },
-    fetchImpl,
-  );
+  return request(CurrentMembershipApi.path, idToken, { method: HttpMethod.get }, fetchImpl);
 }
 
 export async function createHousehold(
-  idToken: string,
+  idToken: CredentialSource,
   input: { name: string; timezone: string; idempotencyKey: string },
   fetchImpl: typeof fetch = fetch,
 ): Promise<HouseholdResult> {
@@ -39,7 +43,7 @@ export async function createHousehold(
     HouseholdApiRoute.households,
     idToken,
     {
-      method: HTTP_METHOD.post,
+      method: HttpMethod.post,
       headers: {
         [HttpHeader.contentType]: APPLICATION_JSON,
         [HttpHeader.idempotencyKey]: input.idempotencyKey,
@@ -52,38 +56,35 @@ export async function createHousehold(
 
 async function request(
   url: string,
-  idToken: string,
+  idToken: CredentialSource,
   init: RequestInit,
   fetchImpl: typeof fetch,
 ): Promise<HouseholdResult> {
   try {
-    const response = await fetchImpl(url, {
-      ...init,
-      headers: {
-        [HttpHeader.accept]: APPLICATION_JSON,
-        [HttpHeader.authorization]: `Bearer ${idToken}`,
-        ...init.headers,
-      },
-      cache: NO_STORE,
-    });
-    const body = (await response.json().catch(() => null)) as {
+    const { response, body } = await fetchAuthenticatedJson<{
       membership?: CurrentMembership | null;
       error?: {
+        code?: string;
         message?: string;
         fieldErrors?: Array<{ field: 'name' | 'timezone'; message: string }>;
       };
-    };
+    }>(url, idToken, init, fetchImpl);
     if (response.ok && body && 'membership' in body) {
       return { kind: 'success', data: { membership: body.membership ?? null } };
     }
+    const failure =
+      url === CurrentMembershipApi.path
+        ? currentMembershipFailure(response.status, body?.error?.code)
+        : null;
     return {
       kind: 'error',
       message:
         response.status === 401
           ? messages.householdClient.sessionEnded
-          : (body.error?.message ?? messages.householdClient.requestFailed),
+          : (body?.error?.message ?? messages.householdClient.requestFailed),
       recoverable: response.status !== 401,
-      fieldErrors: body.error?.fieldErrors,
+      ...(failure ? { failure } : {}),
+      fieldErrors: body?.error?.fieldErrors,
     };
   } catch {
     return {
@@ -96,15 +97,5 @@ async function request(
 import { messages } from '../i18n/messages';
 
 const HouseholdApiRoute = {
-  currentMembership: '/api/v1/memberships/current',
   households: '/api/v1/households',
 } as const;
-const HttpHeader = {
-  accept: 'accept',
-  authorization: 'authorization',
-  contentType: 'content-type',
-  idempotencyKey: 'idempotency-key',
-} as const;
-const APPLICATION_JSON = 'application/json';
-const HTTP_METHOD = { get: 'GET', post: 'POST' } as const;
-const NO_STORE = 'no-store';

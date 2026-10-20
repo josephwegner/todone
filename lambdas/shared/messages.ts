@@ -11,6 +11,8 @@ interface LambdaMessages {
     conflict: string;
   };
   membershipApi: {
+    pendingActivation: string;
+    inactive: string;
     accessUnavailable: string;
     reauthenticationRequired: string;
     internalError: string;

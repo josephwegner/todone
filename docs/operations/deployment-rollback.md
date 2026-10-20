@@ -133,3 +133,27 @@ If the prior application cannot safely read new data, keep the safest compatible
 ## Post-deployment documentation
 
 Update the private release record, not OpenSpec task checkboxes automatically. An OpenSpec deployment/smoke task remains incomplete if explicit authorization was not granted or the smoke did not run. Documentation or plan completion must never be represented as production deployment completion.
+
+## Session-controller compatibility handoff
+
+This change requires no infrastructure mutation or provider lifetime/rotation change. Publish the
+backward-compatible caller-only membership codes before the new frontend; ordinary protected
+endpoint errors retain their existing contract. The client assumes the installed SDK's
+non-rotating `REFRESH_TOKEN_AUTH` semantics. A release owner must verify deployed provider
+compatibility separately; local tests do not inspect production configuration.
+
+Rollback to a frontend that only understands tab storage must not strand reusable shared
+credentials. Before restoring that frontend, use a reviewed compatible cleanup shell on the same
+origin: gate private presentation, sign out the controller, publish a new signed-out marker under
+the same Web Lock, and remove only the configured client scope `todone.auth.v1.<encodedClient>.`
+plus that client's legacy SDK/local-emulator auth keys from current-tab storage. Do not clear all
+origin storage. Close/reload other Todone tabs after the tombstone is observed; suspended or old
+shells must be replaced before resuming. Never copy shared credentials into legacy storage.
+If shared cleanup cannot be confirmed, retain the compatible shell and repair/roll forward rather
+than asserting sign-out succeeded. Restoration of the old shell then requires a fresh sign-in.
+
+The published API changes remain safe for the previous frontend's generic error handling. No
+persistent application-data migration is introduced. Record shell/Lambda versions, cleanup
+outcome, new-tab/reload/sign-out results, and protected-cache absence without credentials or
+identity values. Actual release, cleanup publication, and rollback remain human-owned and
+require separate authorization; none was performed during implementation.

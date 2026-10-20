@@ -54,6 +54,18 @@ export interface BootstrapMessages {
 }
 
 interface EnglishMessages {
+  session: {
+    upgradeHelp: string;
+    signOutIncomplete: string;
+    backgroundHeading: string;
+    backgroundHelp: string;
+    startupHeading: string;
+    startupHelp: string;
+    storageHeading: string;
+    storageHelp: string;
+    retry: string;
+    retrying: string;
+  };
   generic: { unexpectedError: string; networkError: string };
   navigation: {
     appName: string;
@@ -85,6 +97,8 @@ interface EnglishMessages {
   };
   profileClient: { sessionEnded: string; requestFailed: string };
   membershipApi: {
+    pendingActivation: string;
+    inactive: string;
     accessUnavailable: string;
     reauthenticationRequired: string;
     internalError: string;

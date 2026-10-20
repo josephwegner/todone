@@ -1,3 +1,4 @@
+import type { CredentialSource } from './apiClient';
 import type { ProfileColorId } from '../../shared/profilePalette';
 import { messages } from '../i18n/messages';
 import { APPLICATION_JSON, fetchAuthenticatedJson, HttpHeader, HttpMethod } from './apiClient';
@@ -58,7 +59,7 @@ const PASSWORD_RESET_UNAVAILABLE = 'PASSWORD_RESET_UNAVAILABLE';
 
 /** Reads the authenticated caller's safe household directory; no target IDs are accepted. */
 export async function fetchFamilyMembers(
-  idToken: string,
+  idToken: CredentialSource,
   fetchImpl: typeof fetch = fetch,
 ): Promise<FamilyDirectoryResult> {
   try {
@@ -82,7 +83,7 @@ export async function fetchFamilyMembers(
 
 /** Sends the replacement password only in this immediate non-cacheable request. */
 export async function resetChildPassword(
-  idToken: string,
+  idToken: CredentialSource,
   memberId: string,
   password: string,
   fetchImpl: typeof fetch = fetch,
@@ -121,7 +122,7 @@ export async function resetChildPassword(
 
 /** Sends a child password only in this immediate non-cacheable request. */
 export async function createChild(
-  idToken: string,
+  idToken: CredentialSource,
   input: CreateChildInput,
   fetchImpl: typeof fetch = fetch,
 ): Promise<CreateChildResult> {

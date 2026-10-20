@@ -4,7 +4,7 @@
 TBD - created by archiving change bootstrap-household-membership. Update Purpose after archive.
 ## Requirements
 ### Requirement: Username Session Lifecycle
-The application SHALL replace and remove the foundation's temporary sign-in probe. It SHALL provide production username/password sign-in, current-tab session restoration, sign-out, and a first-parent registration flow. Usernames SHALL be immutable, case-insensitive, and globally unique across the user pool, while display names remain separate mutable application profile data. Cognito session material SHALL use browser `sessionStorage` only and SHALL NOT use `localStorage`, IndexedDB, service-worker caches, URLs, or application data. The flow SHALL display loading, invalid-credential, duplicate-username, invalid-registration-gate, registration-closed, network-failure, retry, and signed-out states without exposing credential values.
+The application SHALL replace and remove the foundation's temporary sign-in probe. It SHALL provide production username/password sign-in, shared-browser session restoration, sign-out, and a first-parent registration flow. Usernames SHALL be immutable, case-insensitive, and globally unique across the user pool, while display names remain separate mutable application profile data. Cognito session persistence, renewal, and cross-tab sign-out SHALL follow the browser-session-management capability; the previous sessionStorage-only restriction is replaced by its narrowly scoped shared-browser auth-storage contract. The flow SHALL display loading, invalid-credential, duplicate-username, invalid-registration-gate, registration-closed, network-failure, retry, and signed-out states without exposing credential values.
 
 #### Scenario: Failed sign-in
 - **WHEN** credentials are invalid
@@ -19,12 +19,12 @@ The application SHALL replace and remove the foundation's temporary sign-in prob
 - **THEN** the foundation's temporary sign-in form, verification-account setup, and obsolete tests are removed
 
 #### Scenario: Session is restored in the current tab
-- **WHEN** a signed-in user reloads the current tab before the Cognito session expires
-- **THEN** the application restores the session from `sessionStorage` without copying token values into persistent browser storage
+- **WHEN** a signed-in user reloads the current tab while the shared browser session remains renewable
+- **THEN** the application restores the shared browser account without password entry and resolves its current membership/onboarding state
 
 #### Scenario: User signs out
 - **WHEN** a signed-in user signs out
-- **THEN** session storage and private rendered state are cleared and the signed-out experience is displayed
+- **THEN** owned authentication storage and private rendered state are cleared, sign-out propagates to other tabs, and the signed-out experience is displayed
 
 ### Requirement: Setup-Gated First-Parent Registration
 The deployment SHALL accept public first-parent registration only when a Cognito pre-signup trigger hashes the submitted reusable registration gate password and validates it against the configured `REGISTRATION_GATE_PASSWORD_HASH` environment value. A successful signup SHALL create an unconfirmed Cognito identity with no household Membership; email confirmation SHALL activate it for authentication. The gate password SHALL NOT join an existing household and SHALL NOT be logged or stored as user data. Every later account for an existing household SHALL be created by a parent from family management rather than public registration. A missing or empty configured hash SHALL close public registration.
@@ -100,3 +100,20 @@ Registration, sign-in, parent recovery, and household creation SHALL be keyboard
 - **WHEN** a required household name is omitted
 - **THEN** focus and an accessible error message identify the field that requires correction
 
+### Requirement: Typed Caller Membership Outcomes
+The current-membership API SHALL distinguish the verified caller's pending, inactive, inconsistent, and credential-stale outcomes with stable safe error codes. Denials SHALL disclose no household, target, or stored identity details and SHALL remain non-cacheable. Only unattached identities SHALL receive a successful null membership. Other protected-operation denial contracts SHALL remain unchanged.
+
+#### Scenario: Caller has pending or inactive membership
+- **GIVEN** a verified caller resolves to pending or inactive membership
+- **WHEN** the caller reads current membership
+- **THEN** the response is respectively `403 MEMBERSHIP_PENDING_ACTIVATION` or `403 MEMBERSHIP_INACTIVE`, without household authority or private record fields
+
+#### Scenario: Caller records are inconsistent or credentials are stale
+- **GIVEN** a verified caller has inconsistent membership records or a credential-cutoff rejection
+- **WHEN** the caller reads current membership
+- **THEN** the response is respectively `500 MEMBERSHIP_INCONSISTENT` or `401 SESSION_REAUTHENTICATION_REQUIRED`, with a safe message and request ID, never successful null membership
+
+#### Scenario: Caller outcome is unavailable
+- **GIVEN** current membership fails from an unknown service or network failure
+- **WHEN** the controller resolves context
+- **THEN** it preserves a recoverable failure and does not infer pending, inactive, inconsistent, or unattached membership

@@ -4,6 +4,19 @@
       'unexpectedError': 'Something went wrong. Please try again.',
       'networkError': 'Could not reach the server. Check your connection and try again.',
     },
+  'session':
+    {
+      'upgradeHelp': 'Sign in once more after this update. Your account will then be shared across Todone tabs in this browser and stay signed in while your session remains valid. Signing out will sign you out of those tabs too.',
+      'signOutIncomplete': 'Your private information has been cleared from this page. We couldn’t clear the saved browser session or confirm sign-out in other tabs. Close those tabs, allow browser storage, and sign out again.',
+      'backgroundHeading': 'We couldn’t refresh your account details',
+      'backgroundHelp': 'Your changes stay on this page. Check your connection and retry before trying an action that needs an updated session.',
+      'startupHeading': 'We couldn’t open your session',
+      'startupHelp': 'Your account details couldn’t be loaded. Check your connection and try again. You don’t need to enter your password again unless your session has ended.',
+      'storageHeading': 'We couldn’t access your saved session',
+      'storageHelp': 'Allow this site to use browser storage, then try again. If you choose Sign out, this page will clear your private information. If browser storage stays unavailable, we can’t confirm sign-out in other tabs; close those tabs too.',
+      'retry': 'Retry',
+      'retrying': 'Retrying…',
+    },
   'navigation':
     {
       'appName': 'Todone',
@@ -91,6 +104,8 @@
     },
   'membershipApi':
     {
+      'pendingActivation': 'Your account is waiting for activation. Household access is not available yet.',
+      'inactive': 'Your household access is no longer active. Sign out to continue with another account.',
       'accessUnavailable': 'This account cannot access household information.',
       'reauthenticationRequired': 'Your session needs to be refreshed. Sign in again.',
       'internalError': 'We could not complete this request. Try again later.',

@@ -18,9 +18,11 @@ flowchart TD
     E --> C
     C --> F{Session valid?}
     F -->|No| A
-    F -->|Yes| G{Active Membership?}
-    G -->|Yes| H[Household application]
-    G -->|No| I[Create one household and confirm IANA timezone]
+    F -->|Yes| G{Membership outcome?}
+    G -->|Active| H[Household application]
+    G -->|Unattached| I[Create one household and confirm IANA timezone]
+    G -->|Pending or inactive| L[Safe unavailable surface: retry or sign out]
+    G -->|Credentials stale| A
     I --> J[Initial immutable parent Membership]
     J --> K[Onboarding: add members, then Todos]
 ```
@@ -32,7 +34,10 @@ flowchart TD
 - Existing members bypass bootstrap. Removed or inactive members are denied even with an otherwise valid session.
 - After Membership and Profile resolution, an active child lands on canonical `/todos`. Until the first Todo capability ships, that route clearly says the surface is work in progress and contains no Todo data, Todo controls, or Todo API activity. Parents retain the nearest currently useful authorized landing surface until a real parent Todo home exists.
 - Forgot Password is available to parent accounts with verified email. Children use parent-managed reset, not email recovery.
-- Sign-out clears session and private UI state, then returns focus to the signed-out heading.
+- Return visits, reloads, new tabs, and reopened browser profiles restore the same browser account while provider credentials remain valid. All tabs on this origin share one account; separate browser profiles remain isolated. Legacy tab credentials are cleared without promotion; a tab without valid shared state asks for sign-in once.
+- Ready navigation preserves safe drafts and destination focus without repeating session prerequisites. Routine renewal is silent. A transient background failure preserves confirmed content and offers retry; an uncertain write is never replayed automatically.
+- Pending activation, inactive membership, and inconsistent access use distinct safe feedback with Retry and Sign out; none routes to household creation. This session change does not deliver the separate pending-parent activation feature.
+- Sign-out clears local credentials and private UI/drafts immediately, then returns focus to the signed-out heading. Other open tabs converge to signed out; suspended pages reconcile before revealing private content. SDK cleanup failure cannot keep local access open. A storage failure explains incomplete shared cleanup without redisplaying private content.
 
 ## Family account management
 
@@ -106,7 +111,7 @@ sequenceDiagram
 
 ## Global interruption and recovery
 
-- **Session expires:** Stop protected writes, clear private rendered data, preserve only safe navigation intent, and route to sign-in with an announced explanation. Never replay a secret-bearing request automatically.
+- **Session renewal ends:** Renew silently before expiry when possible. If credentials are terminally invalid, stop protected writes, clear private rendered data, preserve only safe navigation intent, and route to sign-in with an announced explanation. Never replay a secret-bearing request automatically.
 - **Network fails:** Keep current confirmed data visible, identify potentially stale content, and offer retry. Do not claim a mutation succeeded.
 - **Conflict occurs:** Show current authorized state, explain that another change won, and offer refresh or a new action based on that state.
 - **Access is removed:** Clear household state and route to a generic unavailable/signed-out surface without naming the removed household or resource.

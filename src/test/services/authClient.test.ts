@@ -1,9 +1,14 @@
+import {
+  AuthProviderUnavailableError,
+  AuthSessionEndedError,
+} from '../../services/authSessionErrors';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const authenticateUserMock = vi.fn();
 const signOutMock = vi.fn();
 const getSignInUserSessionMock = vi.fn();
 const getSessionMock = vi.fn();
+const refreshSessionMock = vi.fn();
 const getCurrentUserMock = vi.fn();
 const signUpMock = vi.fn();
 const confirmRegistrationMock = vi.fn();
@@ -43,6 +48,9 @@ vi.mock('amazon-cognito-identity-js', () => {
     }
     getSignInUserSession() {
       return getSignInUserSessionMock();
+    }
+    refreshSession(...args: unknown[]) {
+      return refreshSessionMock(...args);
     }
     getSession(callback: unknown) {
       getSessionMock(callback);
@@ -96,27 +104,34 @@ function buildSession(
   const exp = overrides.exp ?? Math.floor(Date.now() / 1000) + 3600;
   return {
     getIdToken: () => ({ getJwtToken: () => idToken, getExpiration: () => exp }),
-    getAccessToken: () => ({ getJwtToken: () => accessToken }),
+    getAccessToken: () => ({ getJwtToken: () => accessToken, getExpiration: () => exp }),
+    getRefreshToken: () => ({ getToken: () => 'synthetic-refresh' }),
   };
 }
 
 function buildClient() {
-  return new AuthClient({
-    userPoolId: 'pool-id',
-    clientId: 'client-id',
-    registrationClientId: 'registration-client-id',
-    region: 'us-east-1',
-  });
+  return new AuthClient(
+    {
+      userPoolId: 'pool-id',
+      clientId: 'client-id',
+      registrationClientId: 'registration-client-id',
+      region: 'us-east-1',
+    },
+    sessionStorage,
+  );
 }
 
 function buildLocalClient() {
-  return new AuthClient({
-    userPoolId: 'local_abc123',
-    clientId: 'local-client-id',
-    registrationClientId: 'local-registration-client-id',
-    region: 'local',
-    localEndpoint: 'http://localhost:9229',
-  });
+  return new AuthClient(
+    {
+      userPoolId: 'local_abc123',
+      clientId: 'local-client-id',
+      registrationClientId: 'local-registration-client-id',
+      region: 'local',
+      localEndpoint: 'http://localhost:9229',
+    },
+    sessionStorage,
+  );
 }
 
 describe('AuthClient', () => {
@@ -127,6 +142,7 @@ describe('AuthClient', () => {
     signOutMock.mockReset();
     getSignInUserSessionMock.mockReset();
     getSessionMock.mockReset();
+    refreshSessionMock.mockReset();
     getCurrentUserMock.mockReset();
     signUpMock.mockReset();
     confirmRegistrationMock.mockReset();
@@ -138,7 +154,7 @@ describe('AuthClient', () => {
     cognitoUserConfigs.length = 0;
   });
 
-  it('configures Cognito to persist sessions in sessionStorage, never localStorage', () => {
+  it('uses the injected SDK storage without choosing a persistence policy', () => {
     buildClient();
 
     expect(poolConfigs).toHaveLength(2);
@@ -376,7 +392,7 @@ describe('AuthClient', () => {
     expect(client.getIdToken()).toBeNull();
   });
 
-  it('restores a valid Cognito session in the same tab', async () => {
+  it('restores a valid Cognito session from injected storage', async () => {
     const session = buildSession({ idToken: 'restored-token' });
     const restoredUser = {
       getSession: (callback: (error: unknown, value: unknown) => void) => callback(null, session),
@@ -400,12 +416,11 @@ describe('AuthClient', () => {
     );
     sessionStorage.setItem('unrelated', 'keep-me');
     getCurrentUserMock.mockReturnValue({
-      getSession: (callback: (error: unknown) => void) => callback(new Error('expired')),
+      getSession: (callback: (error: unknown) => void) =>
+        callback({ code: 'NotAuthorizedException' }),
     });
 
-    const restored = await buildClient().restoreSession();
-
-    expect(restored).toBeNull();
+    await expect(buildClient().restoreSession()).rejects.toBeInstanceOf(AuthSessionEndedError);
     expect(
       sessionStorage.getItem('CognitoIdentityServiceProvider.client-id.LastAuthUser'),
     ).toBeNull();
@@ -413,6 +428,44 @@ describe('AuthClient', () => {
       sessionStorage.getItem('CognitoIdentityServiceProvider.client-id.parent1.idToken'),
     ).toBeNull();
     expect(sessionStorage.getItem('unrelated')).toBe('keep-me');
+  });
+
+  it('retains renewable credentials on transport and throttling failures', async () => {
+    for (const code of ['NetworkingError', 'TooManyRequestsException']) {
+      sessionStorage.setItem(
+        'CognitoIdentityServiceProvider.client-id.parent.idToken',
+        'private-token',
+      );
+      getCurrentUserMock.mockReturnValue({
+        getSession: (callback: (error: unknown) => void) =>
+          callback({ code, message: 'private diagnostic' }),
+      });
+      await expect(buildClient().restoreSession()).rejects.toBeInstanceOf(
+        AuthProviderUnavailableError,
+      );
+      expect(
+        sessionStorage.getItem('CognitoIdentityServiceProvider.client-id.parent.idToken'),
+      ).toBe('private-token');
+    }
+  });
+
+  it('uses the SDK refresh callback and retains distinct terminal renewal failure', async () => {
+    const original = buildSession();
+    authenticateUserMock.mockImplementation((_details, callbacks: MockCallbacks) =>
+      callbacks.onSuccess(original),
+    );
+    getSignInUserSessionMock.mockReturnValue(original);
+    const client = buildClient();
+    await client.signIn('parent', 'form-local-password');
+    refreshSessionMock.mockImplementation((_token, callback) =>
+      callback(null, buildSession({ idToken: 'renewed-id' })),
+    );
+    expect((await client.renewSession())?.idToken).toBe('renewed-id');
+    expect(refreshSessionMock).toHaveBeenCalledOnce();
+    refreshSessionMock.mockImplementation((_token, callback) =>
+      callback({ code: 'NotAuthorizedException', message: 'private diagnostic' }, null),
+    );
+    await expect(client.renewSession()).rejects.toBeInstanceOf(AuthSessionEndedError);
   });
 
   it('signOut removes all app-client auth keys, including a restored user session', () => {
@@ -444,6 +497,7 @@ describe('AuthClient (LOCAL DEVELOPMENT ONLY, localEndpoint set)', () => {
     signOutMock.mockReset();
     getSignInUserSessionMock.mockReset();
     getSessionMock.mockReset();
+    refreshSessionMock.mockReset();
     getCurrentUserMock.mockReset();
     signUpMock.mockReset();
     confirmRegistrationMock.mockReset();
@@ -516,7 +570,7 @@ describe('AuthClient (LOCAL DEVELOPMENT ONLY, localEndpoint set)', () => {
     expect(signOutMock).not.toHaveBeenCalled();
   });
 
-  it('restores a valid local session after a same-tab reload and clears it on sign-out', async () => {
+  it('roundtrips local SDK credentials through injected storage and clears them on sign-out', async () => {
     sendMock.mockResolvedValue({
       AuthenticationResult: {
         IdToken: 'local-id-token',
@@ -533,6 +587,66 @@ describe('AuthClient (LOCAL DEVELOPMENT ONLY, localEndpoint set)', () => {
 
     reloadedClient.signOut();
     expect(await buildLocalClient().restoreSession()).toBeNull();
+  });
+
+  it('restores an expired local session using the retained refresh credential', async () => {
+    sessionStorage.setItem(
+      'todone.auth.local-client-id.localSession',
+      JSON.stringify({
+        idToken: 'expired-id',
+        accessToken: 'expired-access',
+        expiresAt: new Date(Date.now() - 1000).toISOString(),
+        refreshToken: 'synthetic-refresh',
+      }),
+    );
+    sendMock.mockResolvedValue({
+      AuthenticationResult: {
+        IdToken: 'renewed-id',
+        AccessToken: 'renewed-access',
+        ExpiresIn: 3600,
+      },
+    });
+    expect((await buildLocalClient().restoreSession())?.idToken).toBe('renewed-id');
+    expect(sendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: {
+          ClientId: 'local-client-id',
+          AuthFlow: 'REFRESH_TOKEN_AUTH',
+          AuthParameters: { REFRESH_TOKEN: 'synthetic-refresh' },
+        },
+      }),
+    );
+    expect(
+      JSON.parse(sessionStorage.getItem('todone.auth.local-client-id.localSession')!).refreshToken,
+    ).toBe('synthetic-refresh');
+  });
+
+  it('never extends local credential lifetime beyond either JWT expiry', async () => {
+    const expiry = Math.floor(Date.now() / 1000) + 90;
+    const id = `header.${btoa(JSON.stringify({ exp: expiry }))}.signature`;
+    const access = `header.${btoa(JSON.stringify({ exp: expiry + 60 }))}.signature`;
+    sendMock.mockResolvedValue({
+      AuthenticationResult: { IdToken: id, AccessToken: access, ExpiresIn: 3600 },
+    });
+    const result = await buildLocalClient().signIn('localdev', 'LocalDevPass123!');
+    expect(result).toMatchObject({
+      kind: 'success',
+      session: { expiresAt: new Date(expiry * 1000) },
+    });
+  });
+
+  it('recognizes a known-expired JWT despite a later saved expiry value', async () => {
+    const expired = `header.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) - 1 }))}.signature`;
+    sessionStorage.setItem(
+      'todone.auth.local-client-id.localSession',
+      JSON.stringify({
+        idToken: expired,
+        accessToken: expired,
+        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      }),
+    );
+    expect(await buildLocalClient().restoreSession()).toBeNull();
+    expect(sendMock).not.toHaveBeenCalled();
   });
 
   it('rejects and removes an expired local session', async () => {

@@ -1,3 +1,4 @@
+import type { CredentialSource } from './apiClient';
 import { ProfileColor, ProfileColorHex, type ProfileColorId } from '../../shared/profilePalette';
 import { messages } from '../i18n/messages';
 import { APPLICATION_JSON, fetchAuthenticatedJson, HttpHeader, HttpMethod } from './apiClient';
@@ -23,7 +24,7 @@ export type ProfileResult =
 const ProfileApiRoute = { mine: '/api/v1/profiles/me' } as const;
 /** Reads only the authenticated member's profile; the route accepts no target identity. */
 export async function fetchMyProfile(
-  idToken: string,
+  idToken: CredentialSource,
   fetchImpl: typeof fetch = fetch,
 ): Promise<ProfileResult> {
   return request(ProfileApiRoute.mine, idToken, { method: HttpMethod.get }, fetchImpl);
@@ -31,7 +32,7 @@ export async function fetchMyProfile(
 
 /** Creates or replaces only the authenticated member's versioned profile. */
 export async function saveMyProfile(
-  idToken: string,
+  idToken: CredentialSource,
   input: Pick<Profile, 'displayName' | 'color' | 'version'>,
   fetchImpl: typeof fetch = fetch,
 ): Promise<ProfileResult> {
@@ -49,7 +50,7 @@ export async function saveMyProfile(
 
 async function request(
   url: string,
-  idToken: string,
+  idToken: CredentialSource,
   init: RequestInit,
   fetchImpl: typeof fetch,
 ): Promise<ProfileResult> {

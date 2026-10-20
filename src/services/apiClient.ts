@@ -1,4 +1,6 @@
 import type { ApiResult } from './apiResult';
+import { CurrentMembershipApi } from '../../shared/membershipContract';
+import { SessionOperationCancelledError } from '../session/sessionErrors';
 
 export const HttpHeader = {
   accept: 'accept',
@@ -15,23 +17,63 @@ export interface AuthenticatedJsonResponse<T> {
   body: T | null;
 }
 
+export interface AuthenticatedRequestSession {
+  credentials(forceRenewal?: boolean): Promise<string>;
+  isCurrent(): boolean;
+  signal: AbortSignal;
+  onResponse?(response: { status: number; code: unknown; url: string }): Promise<void>;
+}
+export type CredentialSource = string | AuthenticatedRequestSession;
+
 /** Applies the application's non-cacheable bearer-token JSON request contract. */
 export async function fetchAuthenticatedJson<T>(
   url: string,
-  idToken: string,
+  idToken: CredentialSource,
   init: RequestInit,
   fetchImpl: typeof fetch = fetch,
 ): Promise<AuthenticatedJsonResponse<T>> {
-  const response = await fetchImpl(url, {
-    ...init,
-    headers: {
-      [HttpHeader.accept]: APPLICATION_JSON,
-      [HttpHeader.authorization]: `Bearer ${idToken}`,
-      ...init.headers,
-    },
-    cache: NO_STORE,
-  });
-  return { response, body: (await response.json().catch(() => null)) as T | null };
+  const session = typeof idToken === 'string' ? null : idToken;
+  const requireCurrentGeneration = () => {
+    if (session && (!session.isCurrent() || session.signal.aborted))
+      throw new SessionOperationCancelledError();
+  };
+  async function send(forceRenewal: boolean): Promise<AuthenticatedJsonResponse<T>> {
+    requireCurrentGeneration();
+    const token = session ? await session.credentials(forceRenewal) : idToken;
+    requireCurrentGeneration();
+    const response = await fetchImpl(url, {
+      ...init,
+      ...(session ? { signal: session.signal } : {}),
+      headers: {
+        [HttpHeader.accept]: APPLICATION_JSON,
+        ...init.headers,
+        [HttpHeader.authorization]: `Bearer ${token}`,
+      },
+      cache: NO_STORE,
+    });
+    const body = (await response.json().catch(() => null)) as T | null;
+    requireCurrentGeneration();
+    return { response, body };
+  }
+  function errorCode(body: T | null): unknown {
+    if (!body || typeof body !== 'object' || !('error' in body)) return null;
+    const error = body.error;
+    return error && typeof error === 'object' && 'code' in error ? error.code : null;
+  }
+  let result = await send(false);
+  // Only a safe read gets one renewal retry. A sent write retains its endpoint's
+  // original idempotency/uncertain-result contract and is never replayed here.
+  if (
+    session &&
+    result.response.status === 401 &&
+    errorCode(result.body) !== CurrentMembershipApi.credentialsStale &&
+    (init.method ?? HttpMethod.get) === HttpMethod.get
+  )
+    result = await send(true);
+  if (session?.onResponse)
+    await session.onResponse({ status: result.response.status, code: errorCode(result.body), url });
+  requireCurrentGeneration();
+  return result;
 }
 
 export interface HealthResponse {
