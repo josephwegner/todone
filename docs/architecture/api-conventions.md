@@ -98,7 +98,7 @@ Neither bootstrap request accepts a household ID, member ID, role, username, ema
 
 ## Profile and family-directory contracts
 
-An active member reads and version-writes only their own profile through `GET` and `PUT /api/v1/profiles/me`. The write body accepts exactly `displayName`, canonical `color`, and `version`; it never accepts a household ID, member ID, role, username, or Cognito `sub`. A missing profile reads as `{"profile": null}` so first-parent setup can create version `0`; a successful create returns `201 Created` and subsequent writes return `200 OK`. A stale or skipped version returns `409 Conflict` without overwriting the saved profile.
+An active member reads and version-writes only their own profile through `GET` and `PUT /api/v1/profiles/me`. The write body accepts exactly `displayName`, canonical `color`, and `version`; it never accepts a household ID, member ID, role, username, or Cognito `sub`. A missing profile reads as `{"profile": null}` so first-login parent setup can create version `0`; a successful create returns `201 Created` and subsequent writes return `200 OK`. A stale or skipped version returns `409 Conflict` without overwriting the saved profile.
 
 Any active household member may read the safe family directory through:
 
@@ -107,7 +107,7 @@ GET /api/v1/family-members
 Authorization: Bearer <Cognito-ID-token>
 ```
 
-The caller's verified `sub` resolves the household; the request accepts no target or household identifier. The response contains only `memberId`, immutable `username`, immutable `role`, activation state, current `displayName`/canonical `color`, and stable `allowedActions`. It is deterministically ordered by activation state, username, then member ID. Active members have no directory actions. An active parent sees a pending parent with exactly `RESEND_WELCOME`, `CHANGE_EMAIL_AND_RESEND`, and `CANCEL_PENDING_ACCOUNT`; a child receives active members only. Inactive records, recovery email, Cognito status/details, raw `sub`, household details, and cross-household records are never represented.
+The caller's verified `sub` resolves the household; the request accepts no target or household identifier. The response contains only `memberId`, immutable `username`, immutable `role`, activation state, current `displayName`/canonical `color` when a Profile exists, and stable `allowedActions`. Profile-less parents omit name/color and are identified by username and state. It is deterministically ordered by activation state, username, then member ID. Active members have no directory actions. An active parent sees a pending parent with exactly `RESEND_WELCOME`, `CHANGE_EMAIL_AND_RESEND`, and `CANCEL_PENDING_ACCOUNT`; a child receives active members only. Inactive records, recovery email, Cognito status/details, raw `sub`, household details, and cross-household records are never represented.
 
 ## Family-account management contracts
 
@@ -120,8 +120,8 @@ values identify targets only after the caller's household has been resolved; bod
 | Operation | Contract | Success | Retry and error rules |
 | --- | --- | --- | --- |
 | Create child | `POST /api/v1/family-members/children`; `Idempotency-Key`; body exactly `username`, `displayName`, `color`, `password` | `201` with the safe directory member; completed replay is `200` with the same member | Normalized global username conflict is `409 USERNAME_CONFLICT` with a username field error. A split Cognito/application result is generic `500` and requires operator cleanup before username retry. |
-| Create additional parent | `POST /api/v1/family-members/parents`; `Idempotency-Key`; body exactly `username`, `displayName`, `color`, `email` | `201` with the safe pending directory member; completed replay is `200` | Same conflict and split-result rules as child creation. Email is accepted for delivery but omitted from the returned member and peer reads. |
-| Activate additional parent | `POST /api/v1/parent-activations`; no body or target ID; caller has a new token after Cognito `NEW_PASSWORD_REQUIRED` | `200` with the ordinary active current-Membership representation | The adapter marks the already-configured Cognito email verified only after setup-code possession, then matching pending lookup and household Membership become active in one DynamoDB transaction. Repeating after success returns the same active representation. Unattached, child, inactive, mismatched, or corrupt records cannot activate. |
+| Create additional parent | `POST /api/v1/family-members/parents`; `Idempotency-Key`; body exactly `username`, `email` | `201` with the safe pending directory member; completed replay is `200` | Same conflict and split-result rules as child creation. Email is accepted for delivery but omitted from the returned member and peer reads. |
+| Activate additional parent | `POST /api/v1/parent-activations`; no body or target ID; caller has a renewed ID token after password setup and native email-attribute verification | `200` with the ordinary active current-Membership representation | Under exclusive pending-account ownership, server-verified `email_verified=true` and `email` claims must match the current private email binding before both Membership copies become active in one conditional DynamoDB transaction. Activation never administratively marks an email verified. Repeating after success returns the same active representation. Unattached, child, inactive, mismatched, or corrupt records cannot activate. |
 | Reset child password | `PUT /api/v1/family-members/{memberId}/password`; body exactly `password` | `204` after permanent password replacement, global sign-out, and cutoff advancement | Password resets are not automatically replayed after an uncertain response and do not use an idempotency record containing or derived from the password. The UI requires a new explicit submission. Parent/pending/inactive targets are `403 TARGET_NOT_MANAGEABLE`; absent/cross-household targets are `404`. |
 | Resend pending-parent welcome | `POST /api/v1/family-members/{memberId}/welcome-email-resends`; `Idempotency-Key`; no body | `204`; a completed replay is also `204` | Only the same-household pending parent state is valid. Cognito resend throttling is `429`; an uncertain send reports a generic request-ID failure and the UI does not claim delivery. |
 | Change pending email and resend | `PUT /api/v1/family-members/{memberId}/pending-email`; `Idempotency-Key`; body exactly `email` | `204` after Cognito accepts the replacement and resend | The email and rendered message are never returned, logged, or stored in application records. Same target-state, throttling, and uncertain-send rules as resend. |
@@ -252,3 +252,84 @@ Integration tests MUST prove:
 - Parent/child role rules and inactive membership are enforced server-side.
 - Protected responses are not cacheable.
 - Validation, conflicts, throttling, and unexpected errors conform to the envelope without sensitive values.
+
+## Pending-account concurrency and email proof
+
+Password setup authenticates the pending identity; it does not verify the current email. On
+`/activate-parent`, use Cognito `GetUserAttributeVerificationCode` and `VerifyUserAttribute`, then
+renew the ID token. Activation accepts no body, contact value, or target. The shared authentication
+boundary reads email claims only from the configured ID-token verifier or API Gateway's verified
+claims; strict boolean parsing accepts boolean `true` and gateway string `"true"` only. Missing,
+false, malformed, wrong-client, or unverified claims cannot activate. No contact claim enters the
+ordinary session response, application logs, or metrics.
+
+Provisioning stores only a private salted digest of the exact intended email and a pending
+version on the identity lookup. Activation compares verified claims with that current binding.
+An old verified address retained during a staged Cognito update cannot verify its replacement.
+Activation/cancellation delete binding metadata; missing metadata on a legacy pending account
+requires operator repair or recreation rather than inferred ownership.
+
+Activation, welcome resend, change-email-and-resend, and cancellation acquire the same conditional
+operation-owner guard while both Membership copies still match the pending parent/version.
+The guard covers all external calls and final writes. Email replacement commits its new binding
+before releasing ownership. Activation atomically changes both copies and removes pending
+metadata. If activation wins, all pending administrative actions deny before Cognito. If
+cancellation wins, activation cannot recreate records or gain authority. A competing request
+returns safe `409` feedback without side effects. Completed idempotent replays remain valid.
+
+Never expire or steal a guard. An uncertain Cognito/DynamoDB outcome returns generic request-ID
+`500`, retains ownership, and requires operator repair after quiescing delayed work. Only a
+confirmed success or confirmed side-effect-free failure permits conditional release by the same
+owner. Local emulation must enforce the proof boundary or refuse unsupported activation before
+changing Membership; mocked success is not provider parity.
+
+Recovery-email reads return the owning parent's signed Cognito ID-token email claim, never a
+peer lookup. The settings client forces credential renewal before reading so verified replacements
+appear without persisting contact attributes. Replacement stages only the `email` attribute with
+`AdminUpdateUserAttributes`; it must not set `email_verified` to true or false or replace the
+old verified value prematurely. Native attribute verification and ID-token renewal complete the
+flow. Unsupported local staging returns `503` before any mutation.
+
+## Deleted-identity token boundary
+
+The approved deletion-retention exception is a temporary `REVOKED#SHA-256(sub)/REVOCATION`
+record containing no raw identity, member ID, username, name, email, or history. Child removal
+publishes it atomically with inactive Membership copies before cleanup can remove the lookup.
+Membership resolution and household bootstrap check it before treating an identity as unattached.
+An incomplete removal retains non-expiring ownership for operator repair. After confirmed Cognito
+deletion, remove ownership and set numeric `expiresAt` to deletion time plus the configured
+one-hour ID-token lifetime and 60-second tolerance. Pending-parent cancellation uses the same
+bound. No raw child identity survives successful removal; completed replay references associated
+with that child are purged. The marker logically expires independently of eventual DynamoDB TTL
+cleanup. A reused username has a new unrelated `sub` and cannot recover old identity access.
+
+Verify stale-token bootstrap during/after deletion, partial cleanup, completed replay, reference
+purge, token-bound marker expiry, and username reuse. Terraform vendors the pinned table module
+with only TTL added, preserving the existing table resource address, keys, PITR, encryption, and
+deletion protection. Reject any replacement plan; no apply/deploy is authorized. Rollback must
+retain revocation-aware Membership/bootstrap checks until all relevant old JWTs have expired.
+
+## Invited-parent first-login Profile
+
+Parent invitations accept username/email only and create no Profile. A pending or newly active
+parent without a Profile is represented by username and state, omitting displayName/color; the
+family directory remains available. Missing child Profiles still fail closed. After native email
+verification and activation, `/profile/setup` requires that parent to choose their own name/color
+through the existing self-only version-zero Profile API before family management. Cancellation
+handles absent and legacy-present Profiles without granting peers profile-write authority.
+
+## PR activation recovery correction
+
+Welcome resend and change-email-and-resend privately read provider invitation eligibility under
+the pending owner before mutation. Only enabled accounts awaiting password setup qualify.
+After password setup, return safe WELCOME_SETUP_UNAVAILABLE conflict feedback without changing
+email or retaining ownership; the invited parent finishes native verification themselves. A
+read-only failure releases ownership. Definitive pure-resend invalid-state/throttling releases
+ownership; unknown send outcomes and any email-update/resend split retain it for quiesced repair.
+The status read never authorizes activation and provider fields do not enter directory responses.
+
+Pending activation entry/restoration renews credentials and attempts the self endpoint without a
+code. EMAIL_VERIFICATION_REQUIRED alone returns to code entry. Successful native verification
+may consume a code before renewal/activation fails: explicit Retry activation renews and retries
+self activation without replaying the code. Conflict refreshes authorized state without tearing
+down the pending page or automatically looping mutations. Generation checks discard late results.

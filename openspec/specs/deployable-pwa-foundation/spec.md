@@ -1,7 +1,7 @@
 # deployable-pwa-foundation Specification
 
 ## Purpose
-TBD - created by archiving change establish-deployable-pwa-foundation. Update Purpose after archive.
+Establish the responsive Todone PWA, username-based Cognito authentication, protected API, recoverable dedicated data store, privacy-safe operations, and reviewed production deployment boundary.
 ## Requirements
 ### Requirement: Username-Based Authentication Foundation
 The platform SHALL provide a Cognito user pool that accepts case-insensitive username and password sign-in. Usernames SHALL be immutable and globally unique across the Todone user pool. Email and phone SHALL remain optional pool attributes, while later parent-account requirements MAY require verified email for parent recovery. The application SHALL use the Cognito `sub` claim as the stable user identity and SHALL NOT use username or display name as an ownership key.

@@ -84,11 +84,11 @@ export class AuthClient {
     });
   }
 
-  async signIn(username: string, password: string): Promise<SignInResult> {
+  async signIn(username: string, password: string, newPassword?: string): Promise<SignInResult> {
     if (this.config.localEndpoint) {
-      return this.signInLocal(username, password);
+      return this.signInLocal(username, password, newPassword);
     }
-    return this.signInSrp(username, password);
+    return this.signInSrp(username, password, newPassword);
   }
 
   async registerFirstParent(
@@ -326,7 +326,11 @@ export class AuthClient {
     return token;
   }
 
-  private async signInSrp(username: string, password: string): Promise<SignInResult> {
+  private async signInSrp(
+    username: string,
+    password: string,
+    newPassword?: string,
+  ): Promise<SignInResult> {
     // CognitoUser does not inherit Storage from its pool; bind every SDK write.
     const user = new CognitoUser({
       Username: username,
@@ -336,7 +340,7 @@ export class AuthClient {
     const authDetails = new AuthenticationDetails({ Username: username, Password: password });
 
     return new Promise<SignInResult>((resolve) => {
-      user.authenticateUser(authDetails, {
+      const callbacks = {
         onSuccess: (session: CognitoUserSession) => {
           this.currentUser = user;
           resolve({ kind: 'success', session: toAuthSession(session) });
@@ -344,8 +348,57 @@ export class AuthClient {
         onFailure: (err: unknown) => {
           resolve({ kind: 'error', ...mapAuthError(err) });
         },
-      });
+        newPasswordRequired: () => {
+          if (!newPassword) {
+            resolve({
+              kind: 'error',
+              message: messages.parentAccounts.activationHeading,
+              recoverable: true,
+            });
+            return;
+          }
+          // Cognito requires the same challenge-owning user; never accept replacement identity attributes.
+          user.completeNewPasswordChallenge(newPassword, {}, callbacks);
+        },
+      };
+      user.authenticateUser(authDetails, callbacks);
     });
+  }
+
+  /** Native email verification uses only the explicitly supplied current access token; no SDK user cache. */
+  async verifyEmailAttribute(accessToken: string, code?: string): Promise<AuthActionResult> {
+    if (this.config.localEndpoint)
+      return {
+        kind: 'error',
+        message: messages.parentAccounts.localUnsupported,
+        recoverable: false,
+      };
+    const {
+      CognitoIdentityProviderClient,
+      GetUserAttributeVerificationCodeCommand,
+      VerifyUserAttributeCommand,
+    } = await import('@aws-sdk/client-cognito-identity-provider');
+    const cognito = new CognitoIdentityProviderClient({ region: this.config.region });
+    try {
+      if (code === undefined)
+        await cognito.send(
+          new GetUserAttributeVerificationCodeCommand({
+            AccessToken: accessToken,
+            AttributeName: 'email',
+          }),
+        );
+      else
+        await cognito.send(
+          new VerifyUserAttributeCommand({
+            AccessToken: accessToken,
+            AttributeName: 'email',
+            Code: code,
+          }),
+        );
+      return { kind: 'success' };
+    } catch (error) {
+      return confirmationError(error);
+    }
   }
 
   private user(username: string): CognitoUser {
@@ -388,14 +441,19 @@ export class AuthClient {
     }
   }
 
-  private async signInLocal(username: string, password: string): Promise<SignInResult> {
+  private async signInLocal(
+    username: string,
+    password: string,
+    newPassword?: string,
+  ): Promise<SignInResult> {
     // Dynamically imported so this heavier SDK client never lands in the
     // production bundle for the (default) SRP path.
-    const { InitiateAuthCommand } = await import('@aws-sdk/client-cognito-identity-provider');
+    const { InitiateAuthCommand, RespondToAuthChallengeCommand } =
+      await import('@aws-sdk/client-cognito-identity-provider');
     const client = await this.localCognitoClient();
 
     try {
-      const response = await client.send(
+      let response = await client.send(
         new InitiateAuthCommand({
           AuthFlow: 'USER_PASSWORD_AUTH',
           ClientId: this.config.clientId,
@@ -403,6 +461,16 @@ export class AuthClient {
         }),
       );
 
+      if (response.ChallengeName === 'NEW_PASSWORD_REQUIRED' && newPassword) {
+        response = await client.send(
+          new RespondToAuthChallengeCommand({
+            ClientId: this.config.clientId,
+            ChallengeName: 'NEW_PASSWORD_REQUIRED',
+            Session: response.Session,
+            ChallengeResponses: { USERNAME: username, NEW_PASSWORD: newPassword },
+          }),
+        );
+      }
       const result = response.AuthenticationResult;
       if (!result?.IdToken || !result.AccessToken) {
         return {

@@ -31,7 +31,9 @@ function request(
     requestContext: {
       requestId: 'test-request',
       http: { method: 'PUT' },
-      authorizer: { jwt: { claims: { sub, 'cognito:username': sub, iat: 1800000000 } } },
+      authorizer: {
+        jwt: { claims: { token_use: 'id', sub, 'cognito:username': sub, iat: 1800000000 } },
+      },
     },
   } as unknown as APIGatewayProxyEventV2;
 }
@@ -66,9 +68,10 @@ async function fixture() {
     createUser: vi.fn(async () => ({ sub: 'new-child' })),
     setPermanentPassword: vi.fn(async () => {}),
     globalSignOut: vi.fn(async () => {}),
+    canResendWelcome: vi.fn().mockResolvedValue(true),
     resendWelcome: vi.fn(),
     updatePendingParentEmail: vi.fn(),
-    markEmailVerified: vi.fn(),
+    stageRecoveryEmail: vi.fn(),
     deleteUser: vi.fn(),
   };
   return { repository, administration, now: () => cutoff };

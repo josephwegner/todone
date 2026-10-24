@@ -36,3 +36,12 @@ Daily recurrence has established template/generated-Todo, timezone, server gener
 - Treat existing templates without a frequency field as `daily` before introducing weekly/monthly creation or cadence editing.
 - Deploy read/write compatibility for frequency and cadence fields first, then enable the new scheduler paths, then enable UI controls.
 - Rollback disables weekly/monthly creation and scheduling while preserving existing generated Todos and daily behavior. Templates already using a non-daily cadence remain readable and may be removed, but no new rounds are generated until the feature is restored.
+
+## Child-removal extension contract
+
+Register every child-associated record/history/audit type introduced here in
+`lambdas/households/childRemoval.ts` (`childRemovalSteps`) and add deletion and partial-failure
+coverage before this capability is complete. Keep profile/lifecycle writes conditional on active
+Membership so late writers cannot recreate purged data. The approved hash-only revocation marker
+blocks stale-token bootstrap after lookup deletion and expires after confirmed Cognito deletion
+plus configured token lifetime/tolerance; never retain raw removed-child identity or snapshots.

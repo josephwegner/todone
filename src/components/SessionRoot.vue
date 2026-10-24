@@ -18,6 +18,9 @@ const copy = messages.session;
 const showApplication = computed(
   () =>
     session.state.value.kind === 'ready' ||
+    (session.state.value.kind === 'recoverable-error' &&
+      session.state.value.failure === 'pending-activation' &&
+      route.name === 'activate-parent') ||
     (session.state.value.kind === 'signed-out' &&
       route.name &&
       isPublicRouteName(route.name as AppRouteName)),
@@ -46,7 +49,12 @@ watch(
     if (state.kind === 'ready' && state.context.kind === 'active')
       applyProfileTone(state.context.profile.color);
     else clearProfileTone();
-    if (route.name && (state.kind === 'ready' || state.kind === 'signed-out')) {
+    if (
+      route.name &&
+      (state.kind === 'ready' ||
+        state.kind === 'signed-out' ||
+        (state.kind === 'recoverable-error' && state.failure === 'pending-activation'))
+    ) {
       const destination = sessionRouteDestination(route.name as AppRouteName, state);
       if (destination !== true) await router.replace({ name: destination });
     }

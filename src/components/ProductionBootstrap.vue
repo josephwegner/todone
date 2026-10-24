@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ChildRemovalControl from './ChildRemovalControl.vue';
+import PendingParentControls from './PendingParentControls.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
 import type { CredentialSource } from '../services/apiClient';
@@ -1246,6 +1248,9 @@ async function focusRouteHeading(): Promise<void> {
           <RouterLink :to="{ name: AppRouteName.newChild }" class="primary family-page__create">
             {{ familyCopy.createChild }}
           </RouterLink>
+          <RouterLink :to="{ name: AppRouteName.newParent }" class="secondary">{{
+            messages.parentAccounts.createHeading
+          }}</RouterLink>
           <button type="button" class="link family-page__sign-out" @click="signOut()">
             {{ copy.signOut }}
           </button>
@@ -1255,12 +1260,13 @@ async function focusRouteHeading(): Promise<void> {
       <ul v-else class="family-directory" :aria-label="familyCopy.memberDirectory">
         <li v-for="member in familyMembers" :key="member.memberId" class="family-member">
           <span
+            v-if="member.color"
             class="profile-color-swatch"
             :style="{ backgroundColor: ProfileColorHex[member.color] }"
             aria-hidden="true"
           />
           <div class="family-member__identity">
-            <p class="body-strong font-medium">{{ member.displayName }}</p>
+            <p class="body-strong font-medium">{{ member.displayName ?? member.username }}</p>
             <dl class="family-member__metadata body-secondary text-sm">
               <div>
                 <dt class="sr-only">{{ familyCopy.username }}</dt>
@@ -1269,6 +1275,16 @@ async function focusRouteHeading(): Promise<void> {
               <div v-if="member.role === 'parent'" class="family-role-token">
                 <dt class="sr-only">{{ familyCopy.role }}</dt>
                 <dd>{{ familyCopy.parent }}</dd>
+              </div>
+              <div
+                v-if="
+                  member.role === 'parent' &&
+                  member.activationState === 'ACTIVE' &&
+                  !member.displayName
+                "
+              >
+                <dt class="sr-only">{{ familyCopy.status }}</dt>
+                <dd>{{ messages.parentAccounts.profilePending }}</dd>
               </div>
               <div v-if="member.activationState === 'PENDING_ACTIVATION'">
                 <dt class="sr-only">{{ familyCopy.status }}</dt>
@@ -1284,13 +1300,26 @@ async function focusRouteHeading(): Promise<void> {
           >
             {{ familyCopy.editProfile }}
           </RouterLink>
-          <RouterLink
-            v-else-if="member.role === 'child' && member.activationState === 'ACTIVE'"
-            :to="{ name: AppRouteName.resetChildPassword, params: { memberId: member.memberId } }"
-            class="link family-member__action"
+          <div
+            v-if="member.role === 'child' && member.activationState === 'ACTIVE'"
+            class="family-member__actions"
           >
-            {{ familyCopy.resetChildPassword }}
-          </RouterLink>
+            <RouterLink
+              :to="{ name: AppRouteName.resetChildPassword, params: { memberId: member.memberId } }"
+              class="link"
+            >
+              {{ familyCopy.resetChildPassword }}
+            </RouterLink>
+            <ChildRemovalControl
+              :member="member"
+              @changed="run(async () => loadFamilyManagement(session.requestContext()))"
+            />
+          </div>
+          <PendingParentControls
+            v-if="member.activationState === 'PENDING_ACTIVATION'"
+            :member="member"
+            @changed="run(async () => loadFamilyManagement(session.requestContext()))"
+          />
         </li>
       </ul>
     </div>

@@ -1,6 +1,7 @@
 locals {
-  app_name    = "todone"
-  environment = "prod"
+  id_token_validity_hours = 1
+  app_name                = "todone"
+  environment             = "prod"
   lambda_table_actions = [
     "dynamodb:GetItem",
     "dynamodb:PutItem",
@@ -15,6 +16,7 @@ locals {
   ]
   family_account_cognito_actions = [
     "cognito-idp:AdminCreateUser",
+    "cognito-idp:AdminGetUser",
     "cognito-idp:AdminDeleteUser",
     "cognito-idp:AdminSetUserPassword",
     "cognito-idp:AdminUpdateUserAttributes",
@@ -100,6 +102,7 @@ resource "aws_cognito_user_pool" "todone" {
             <p>Your one-time setup code is <strong>{####}</strong>.</p>
             <p><a href="${local.canonical_pwa_origin}/activate-parent">Activate your parent account</a></p>
             <p>Choose a password with at least 8 characters, including an uppercase letter, lowercase letter, number, and symbol.</p>
+            <p>After choosing your password, request and enter a separate email-verification code to finish activation. Your one-time setup code is not the email-verification code.</p>
           </body>
         </html>
       HTML
@@ -144,10 +147,11 @@ resource "aws_cognito_user_pool" "todone" {
 module "auth" {
   source = "git::https://github.com/josephwegner/family-paas.git//terraform/modules/cognito-app-client?ref=beb37ef0e19d896984cb3c16165b2307e38fdf31"
 
-  app_name         = local.app_name
-  environment      = local.environment
-  user_pool_id     = aws_cognito_user_pool.todone.id
-  write_attributes = ["custom:browser_write_guard"]
+  app_name                = local.app_name
+  environment             = local.environment
+  user_pool_id            = aws_cognito_user_pool.todone.id
+  id_token_validity_hours = local.id_token_validity_hours
+  write_attributes        = ["custom:browser_write_guard"]
 }
 
 # Public, registration-only client. Its only configured authentication flow is
@@ -155,16 +159,17 @@ module "auth" {
 module "registration_auth" {
   source = "git::https://github.com/josephwegner/family-paas.git//terraform/modules/cognito-app-client?ref=beb37ef0e19d896984cb3c16165b2307e38fdf31"
 
-  app_name            = local.app_name
-  environment         = local.environment
-  user_pool_id        = aws_cognito_user_pool.todone.id
-  client_name         = "todone-registration-prod"
-  explicit_auth_flows = ["ALLOW_CUSTOM_AUTH"]
-  write_attributes    = ["email"]
+  app_name                = local.app_name
+  environment             = local.environment
+  user_pool_id            = aws_cognito_user_pool.todone.id
+  client_name             = "todone-registration-prod"
+  id_token_validity_hours = local.id_token_validity_hours
+  explicit_auth_flows     = ["ALLOW_CUSTOM_AUTH"]
+  write_attributes        = ["email"]
 }
 
 module "table" {
-  source = "git::https://github.com/josephwegner/family-paas.git//terraform/modules/dynamodb-table?ref=beb37ef0e19d896984cb3c16165b2307e38fdf31"
+  source = "./modules/todone-data-table"
 
   table_name  = "${local.app_name}-data-${local.environment}"
   environment = local.environment
@@ -382,6 +387,23 @@ module "reset_child_password_lambda" {
   }
 }
 
+module "parent_account_lambdas" {
+  source           = "git::https://github.com/josephwegner/family-paas.git//terraform/modules/lambda-function?ref=beb37ef0e19d896984cb3c16165b2307e38fdf31"
+  for_each         = toset(["create-parent", "activate-parent", "pending-parent-actions", "recovery-email", "remove-child"])
+  function_name    = each.key
+  app_name         = local.app_name
+  environment      = local.environment
+  lambda_role_arn  = each.key == "activate-parent" ? aws_iam_role.lambda_role.arn : aws_iam_role.family_account_admin_role.arn
+  s3_bucket        = data.terraform_remote_state.shared.outputs.lambda_deployments_bucket
+  s3_key           = var.lambda_artifacts[each.key].s3_key
+  source_code_hash = var.lambda_artifacts[each.key].source_code_hash
+  environment_variables = {
+    TODONE_TABLE_NAME    = module.table.table_name
+    COGNITO_USER_POOL_ID = aws_cognito_user_pool.todone.id
+    COGNITO_CLIENT_ID    = module.auth.client_id
+  }
+}
+
 module "api" {
   source = "git::https://github.com/josephwegner/family-paas.git//terraform/modules/api-gateway?ref=beb37ef0e19d896984cb3c16165b2307e38fdf31"
 
@@ -444,6 +466,54 @@ module "api" {
       route_key     = "PUT /api/v1/family-members/{memberId}/password"
       function_arn  = module.reset_child_password_lambda.invoke_arn
       function_name = module.reset_child_password_lambda.function_name
+      auth_required = true
+    },
+    {
+      route_key     = "POST /api/v1/family-members/parents"
+      function_arn  = module.parent_account_lambdas["create-parent"].invoke_arn
+      function_name = module.parent_account_lambdas["create-parent"].function_name
+      auth_required = true
+    },
+    {
+      route_key     = "POST /api/v1/parent-activations"
+      function_arn  = module.parent_account_lambdas["activate-parent"].invoke_arn
+      function_name = module.parent_account_lambdas["activate-parent"].function_name
+      auth_required = true
+    },
+    {
+      route_key     = "POST /api/v1/family-members/{memberId}/welcome-email-resends"
+      function_arn  = module.parent_account_lambdas["pending-parent-actions"].invoke_arn
+      function_name = module.parent_account_lambdas["pending-parent-actions"].function_name
+      auth_required = true
+    },
+    {
+      route_key     = "PUT /api/v1/family-members/{memberId}/pending-email"
+      function_arn  = module.parent_account_lambdas["pending-parent-actions"].invoke_arn
+      function_name = module.parent_account_lambdas["pending-parent-actions"].function_name
+      auth_required = true
+    },
+    {
+      route_key     = "DELETE /api/v1/family-members/{memberId}/pending-account"
+      function_arn  = module.parent_account_lambdas["pending-parent-actions"].invoke_arn
+      function_name = module.parent_account_lambdas["pending-parent-actions"].function_name
+      auth_required = true
+    },
+    {
+      route_key     = "GET /api/v1/security/recovery-email"
+      function_arn  = module.parent_account_lambdas["recovery-email"].invoke_arn
+      function_name = module.parent_account_lambdas["recovery-email"].function_name
+      auth_required = true
+    },
+    {
+      route_key     = "PUT /api/v1/security/recovery-email"
+      function_arn  = module.parent_account_lambdas["recovery-email"].invoke_arn
+      function_name = module.parent_account_lambdas["recovery-email"].function_name
+      auth_required = true
+    },
+    {
+      route_key     = "DELETE /api/v1/family-members/{memberId}"
+      function_arn  = module.parent_account_lambdas["remove-child"].invoke_arn
+      function_name = module.parent_account_lambdas["remove-child"].function_name
       auth_required = true
     },
   ]

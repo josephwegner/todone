@@ -5,6 +5,13 @@ import dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
 
 import express from 'express';
+import { handler as removeChildHandler } from '../lambdas/households/removeChild';
+import { handler as recoveryEmailHandler } from '../lambdas/households/recoveryEmail';
+import {
+  createParentHandler,
+  activateParentHandler,
+  pendingParentActionHandler,
+} from '../lambdas/households/parentHandlers';
 import { simulateLambda } from './lambdaSimulator';
 import { handler as healthHandler } from '../lambdas/health/index';
 import { handler as sessionHandler } from '../lambdas/session/index';
@@ -18,10 +25,14 @@ import {
   updateHandler as updateProfileHandler,
 } from '../lambdas/households/profile';
 import { InMemoryHouseholdRepository } from '../lambdas/households/repository';
+import { loadLocalSeed } from './seedHousehold';
 
 const app = express();
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
 const householdRepository = new InMemoryHouseholdRepository();
+if (await loadLocalSeed(householdRepository)) {
+  console.log('Loaded the disposable local review household: two active parents and one child.');
+}
 
 app.use(express.json());
 app.use(
@@ -104,6 +115,55 @@ app.put('/api/v1/profiles/me', async (req, res) => {
   );
 });
 
+app.post('/api/v1/family-members/parents', async (req, res) => {
+  await simulateLambda(
+    (event) => createParentHandler(event, { repository: householdRepository }),
+    req,
+    res,
+  );
+});
+app.post('/api/v1/parent-activations', async (req, res) => {
+  await simulateLambda(
+    (event) =>
+      activateParentHandler(event, { repository: householdRepository, activationAvailable: false }),
+    req,
+    res,
+  );
+});
+for (const [method, path] of [
+  ['post', '/api/v1/family-members/:memberId/welcome-email-resends'],
+  ['put', '/api/v1/family-members/:memberId/pending-email'],
+  ['delete', '/api/v1/family-members/:memberId/pending-account'],
+] as const) {
+  app[method](path, async (req, res) => {
+    await simulateLambda(
+      (event) => pendingParentActionHandler(event, { repository: householdRepository }),
+      req,
+      res,
+    );
+  });
+}
+
+for (const method of ['get', 'put'] as const) {
+  app[method]('/api/v1/security/recovery-email', async (req, res) =>
+    simulateLambda(
+      (event) =>
+        recoveryEmailHandler(event, {
+          repository: householdRepository,
+          activationAvailable: false,
+        }),
+      req,
+      res,
+    ),
+  );
+}
+app.delete('/api/v1/family-members/:memberId', async (req, res) =>
+  simulateLambda(
+    (event) => removeChildHandler(event, { repository: householdRepository }),
+    req,
+    res,
+  ),
+);
 const server = app.listen(PORT, () => {
   console.log(`Todone local API simulator running on http://localhost:${PORT}`);
   console.log('Endpoints:');

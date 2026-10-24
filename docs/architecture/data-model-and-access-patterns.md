@@ -34,7 +34,7 @@ The logical prefixes do not permit direct string concatenation from unvalidated 
 | Access pattern | Authorization and query requirement |
 | --- | --- |
 | Resolve current membership by JWT `sub` | Strongly read `USER#<sub>/MEMBERSHIP`, then the referenced Household and household Membership. Return a typed `UNATTACHED`, `ACTIVE`, `PENDING_ACTIVATION`, `INACTIVE`, `CREDENTIALS_STALE`, or `INCONSISTENT` outcome. Validate matching keys, IDs, `sub`, username, role, activation, required attributes, and token `iat > credentialsValidAfter`. Do not accept a household ID from the client as a substitute. |
-| Activate a pending parent | By verified caller `sub`, strongly read the pending lookup and referenced pending household Membership, validate that both describe the same parent, mark the already-configured Cognito email verified after setup-code possession, and transact both activation copies from `PENDING_ACTIVATION` to `ACTIVE`. No client household/member/role/email value participates. |
+| Activate a pending parent | By verified caller `sub`, strongly read the pending lookup and referenced pending household Membership, validate that both describe the same parent, acquire exclusive pending-account ownership, validate signed verified-email claims against the current private binding, and conditionally transact both activation copies from `PENDING_ACTIVATION` to `ACTIVE`. No client household/member/role/email value participates. |
 | Bootstrap one household for an unattached user | Condition that no user lookup exists, and atomically or idempotently create Household, initial parent Membership, and lookup. Concurrent retries produce one household. Profile data is introduced by the later family-account capability. |
 | Read household and current member | Use household ID obtained from the active lookup, then keyed reads. |
 | List active household members | Query the household member key range; exclude inactive or partially provisioned members. |
@@ -112,3 +112,54 @@ Every change that introduces an entity or query MUST document:
 - Cross-household and role-negative tests.
 - Backup/restore implications.
 - Whether the entity is child-associated and how full child removal deletes it and its audit data.
+
+## Pending-account binding and operation ownership
+
+The user lookup owns pending-only `emailBindingSalt`, `emailBindingDigest`, `pendingVersion`, and
+optional `pendingOperationOwner`. Hash the length-delimited salt and exact intended Cognito email;
+this private derived contact data is not anonymized and must never enter projections or telemetry.
+Do not persist raw email. Creation writes matching pending Membership copies and binding version 1.
+Email replacement updates the digest and increments that version only after confirmed Cognito
+update/resend. Activation and cancellation remove binding metadata.
+
+Guard acquisition transacts the pending parent/version checks on both copies and an absent-owner
+check with ownership publication. All final writes/releases require that owner and version;
+re-read target invariants before external calls. Ownership does not expire and has no TTL. A
+failed/uncertain external call retains it until a quiesced operator repair. An old handler or
+rollback must not bypass it. Missing binding/version denies legacy pending transitions. No
+additional service, workflow engine, contact snapshot, or automatic repair is introduced.
+
+## Deleted-identity token boundary
+
+The approved deletion-retention exception is a temporary `REVOKED#SHA-256(sub)/REVOCATION`
+record containing no raw identity, member ID, username, name, email, or history. Child removal
+publishes it atomically with inactive Membership copies before cleanup can remove the lookup.
+Membership resolution and household bootstrap check it before treating an identity as unattached.
+An incomplete removal retains non-expiring ownership for operator repair. After confirmed Cognito
+deletion, remove ownership and set numeric `expiresAt` to deletion time plus the configured
+one-hour ID-token lifetime and 60-second tolerance. Pending-parent cancellation uses the same
+bound. No raw child identity survives successful removal; completed replay references associated
+with that child are purged. The marker logically expires independently of eventual DynamoDB TTL
+cleanup. A reused username has a new unrelated `sub` and cannot recover old identity access.
+
+Verify stale-token bootstrap during/after deletion, partial cleanup, completed replay, reference
+purge, token-bound marker expiry, and username reuse. Terraform vendors the pinned table module
+with only TTL added, preserving the existing table resource address, keys, PITR, encryption, and
+deletion protection. Reject any replacement plan; no apply/deploy is authorized. Rollback must
+retain revocation-aware Membership/bootstrap checks until all relevant old JWTs have expired.
+
+The deployed child-removal registry is `childRemovalSteps` in
+`lambdas/households/childRemoval.ts`. Every new child-associated storage type extends that registry
+and its failure tests before release. Profile writes transactionally require an active household
+Membership so a delayed write cannot recreate a removed child's profile. Reset/deletion targets
+use immutable Cognito `sub` at the administration boundary to avoid mutating an unrelated new
+identity when a deleted username is reused. Operator procedures must use the same identity rule.
+
+## Invited-parent first-login Profile
+
+Parent invitations accept username/email only and create no Profile. A pending or newly active
+parent without a Profile is represented by username and state, omitting displayName/color; the
+family directory remains available. Missing child Profiles still fail closed. After native email
+verification and activation, `/profile/setup` requires that parent to choose their own name/color
+through the existing self-only version-zero Profile API before family management. Cancellation
+handles absent and legacy-present Profiles without granting peers profile-write authority.

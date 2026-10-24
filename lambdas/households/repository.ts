@@ -1,9 +1,16 @@
+import { ChildRemovalRepository } from './childRemoval';
+import { isRevoked, revocationKey } from './revocation';
+import {
+  PendingParentRepository,
+  DynamoConditionalRecordStore,
+  type ConditionalRecordStore,
+  type HouseholdRecordValue,
+} from './pendingParents';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   DynamoDBClient,
   GetItemCommand,
   QueryCommand,
-  PutItemCommand,
   UpdateItemCommand,
   TransactWriteItemsCommand,
   ConditionalCheckFailedException,
@@ -51,6 +58,16 @@ import type {
 } from './model';
 
 export class DynamoHouseholdRepository implements HouseholdRepository {
+  private get recordStore(): ConditionalRecordStore {
+    return new DynamoConditionalRecordStore(this.tableName, this.client);
+  }
+  get pendingParents(): PendingParentRepository {
+    return new PendingParentRepository(this.recordStore, this.id);
+  }
+  get childRemoval(): ChildRemovalRepository {
+    return new ChildRemovalRepository(this.recordStore);
+  }
+
   constructor(
     private readonly tableName: string,
     private readonly client = new DynamoDBClient({}),
@@ -60,8 +77,14 @@ export class DynamoHouseholdRepository implements HouseholdRepository {
 
   async resolveMembership(sub: string, tokenIssuedAt?: number): Promise<MembershipResolution> {
     try {
+      if (await isRevoked(this.recordStore, sub))
+        return { kind: MembershipResolutionKind.inactive };
       const lookup = await this.getItem(membershipLookupKey(sub));
-      if (!lookup) return { kind: MembershipResolutionKind.unattached };
+      if (!lookup) {
+        if (await isRevoked(this.recordStore, sub))
+          return { kind: MembershipResolutionKind.inactive };
+        return { kind: MembershipResolutionKind.unattached };
+      }
       const householdId = requiredStringAttribute(lookup.householdId);
       const memberId = requiredStringAttribute(lookup.memberId);
       const [household, membership] = await Promise.all([
@@ -76,6 +99,7 @@ export class DynamoHouseholdRepository implements HouseholdRepository {
   }
 
   async bootstrap(input: BootstrapInput): Promise<BootstrapResult> {
+    if (await isRevoked(this.recordStore, input.sub)) return { kind: 'already-member' };
     const inputHash = hashInput(input.name, input.timezone, input.username);
     const replay = await this.readReplay(input.sub, input.idempotencyKey, inputHash);
     if (replay) return replay;
@@ -94,6 +118,16 @@ export class DynamoHouseholdRepository implements HouseholdRepository {
       await this.client.send(
         new TransactWriteItemsCommand({
           TransactItems: [
+            {
+              ConditionCheck: {
+                TableName: this.tableName,
+                Key: {
+                  pk: stringAttribute(revocationKey(input.sub).pk),
+                  sk: stringAttribute(revocationKey(input.sub).sk),
+                },
+                ConditionExpression: ATTRIBUTE_DOES_NOT_EXIST,
+              },
+            },
             putItem(
               this.tableName,
               membershipLookupItem(input.sub, input.username, householdId, memberId, createdAt),
@@ -142,17 +176,45 @@ export class DynamoHouseholdRepository implements HouseholdRepository {
     };
     try {
       await this.client.send(
-        new PutItemCommand({
-          TableName: this.tableName,
-          Item: profileItem(input.householdId, nextProfile),
-          ConditionExpression: 'attribute_not_exists(pk) OR #version = :expectedVersion',
-          ExpressionAttributeNames: { '#version': 'version' },
-          ExpressionAttributeValues: { ':expectedVersion': numberAttribute(input.version) },
+        new TransactWriteItemsCommand({
+          TransactItems: [
+            {
+              ConditionCheck: {
+                TableName: this.tableName,
+                Key: {
+                  pk: stringAttribute(householdMemberKey(input.householdId, input.memberId).pk),
+                  sk: stringAttribute(householdMemberKey(input.householdId, input.memberId).sk),
+                },
+                ConditionExpression: '#state = :active',
+                ExpressionAttributeNames: { '#state': 'activationState' },
+                ExpressionAttributeValues: {
+                  ':active': stringAttribute(MembershipActivationState.active),
+                },
+              },
+            },
+            {
+              Put: {
+                TableName: this.tableName,
+                Item: profileItem(input.householdId, nextProfile),
+                ConditionExpression: existing
+                  ? '#version = :expectedVersion'
+                  : ATTRIBUTE_DOES_NOT_EXIST,
+                ...(existing
+                  ? {
+                      ExpressionAttributeNames: { '#version': 'version' },
+                      ExpressionAttributeValues: {
+                        ':expectedVersion': numberAttribute(input.version),
+                      },
+                    }
+                  : {}),
+              },
+            },
+          ],
         }),
       );
       return { kind: existing ? 'updated' : 'created', profile: nextProfile };
     } catch (error) {
-      if (!(error instanceof ConditionalCheckFailedException)) throw error;
+      if (!(error instanceof TransactionCanceledException)) throw error;
       return {
         kind: 'conflict',
         profile: await this.getProfile(input.householdId, input.memberId),
@@ -162,23 +224,28 @@ export class DynamoHouseholdRepository implements HouseholdRepository {
 
   async listFamilyMembers(householdId: string): Promise<FamilyDirectoryMember[]> {
     const key = householdKey(householdId);
-    const result = await this.client.send(
-      new QueryCommand({
-        TableName: this.tableName,
-        KeyConditionExpression: 'pk = :pk AND begins_with(sk, :memberPrefix)',
-        ExpressionAttributeValues: {
-          ':pk': stringAttribute(key.pk),
-          ':memberPrefix': stringAttribute(`${HouseholdRecord.memberPrefix}#`),
-        },
-        ConsistentRead: true,
-      }),
-    );
-    const memberships = (result.Items ?? []).filter(isVisibleDirectoryMembership);
+    const memberships: Record<string, AttributeValue>[] = [];
+    let cursor: Record<string, AttributeValue> | undefined;
+    do {
+      const result = await this.client.send(
+        new QueryCommand({
+          TableName: this.tableName,
+          KeyConditionExpression: 'pk = :pk AND begins_with(sk, :memberPrefix)',
+          ExpressionAttributeValues: {
+            ':pk': stringAttribute(key.pk),
+            ':memberPrefix': stringAttribute(`${HouseholdRecord.memberPrefix}#`),
+          },
+          ConsistentRead: true,
+          ExclusiveStartKey: cursor,
+        }),
+      );
+      memberships.push(...(result.Items ?? []).filter(isVisibleDirectoryMembership));
+      cursor = result.LastEvaluatedKey;
+    } while (cursor);
     const members = await Promise.all(
       memberships.map(async (membership) => {
         const memberId = requiredStringAttribute(membership.memberId);
         const profile = await this.getProfile(householdId, memberId);
-        if (!profile) throw missingProfileError();
         return directoryMemberFromStoredItem(membership, profile);
       }),
     );
@@ -340,6 +407,82 @@ export class DynamoHouseholdRepository implements HouseholdRepository {
 }
 
 export class InMemoryHouseholdRepository implements HouseholdRepository {
+  private readonly pendingRows = new Map<string, HouseholdRecordValue>();
+  get pendingParents(): PendingParentRepository {
+    return new PendingParentRepository(this.recordStore, this.id);
+  }
+  get childRemoval(): ChildRemovalRepository {
+    return new ChildRemovalRepository(this.recordStore);
+  }
+  private get recordStore(): ConditionalRecordStore {
+    const read = (key: HouseholdStorageKey): HouseholdRecordValue | null => {
+      const row = this.pendingMemoryMap(key).get(this.pendingMemoryKey(key));
+      return row ? (structuredClone({ ...key, ...row }) as HouseholdRecordValue) : null;
+    };
+    const store: ConditionalRecordStore = {
+      read: async (key) => read(key),
+      query: async (pk, prefix) => {
+        const rows: HouseholdRecordValue[] = [];
+        for (const [key, value] of this.childReplays) {
+          const split = key.indexOf('\0');
+          const sub = key.slice(0, split),
+            local = key.slice(split + 1);
+          if (!local.startsWith('CHILD:')) continue;
+          const raw = childProvisionReplayKey(sub, local.slice(6));
+          if (raw.pk === pk && raw.sk.startsWith(prefix)) rows.push({ ...raw, ...value });
+        }
+        for (const value of this.pendingRows.values())
+          if (value.pk === pk && typeof value.sk === 'string' && value.sk.startsWith(prefix))
+            rows.push(structuredClone(value));
+        return rows;
+      },
+      transact: async (writes) => {
+        // Synchronous check-then-commit is atomic across concurrent local requests, with no await gap.
+        if (
+          writes.some((write) =>
+            Object.entries(write.expected).some(
+              ([name, value]) => read(write.key)?.[name] !== value,
+            ),
+          )
+        )
+          return false;
+        for (const write of writes) {
+          const map = this.pendingMemoryMap(write.key),
+            key = this.pendingMemoryKey(write.key);
+          if (write.delete) {
+            map.delete(key);
+            continue;
+          }
+          if (!write.put && !write.set && !write.remove) continue;
+          const row = { ...(write.put ?? read(write.key) ?? {}), ...write.set };
+          for (const name of [...(write.remove ?? []), 'pk', 'sk']) delete row[name];
+          map.set(key, structuredClone(row));
+        }
+        return true;
+      },
+    };
+    return store;
+  }
+  private pendingMemoryKey(key: HouseholdStorageKey): string {
+    const id = key.pk.slice(key.pk.indexOf('#') + 1);
+    if (key.sk.startsWith('IDEMPOTENCY#CHILD#'))
+      return inMemoryReplayKey(id, `CHILD:${key.sk.slice('IDEMPOTENCY#CHILD#'.length)}`);
+    if (key.sk === HouseholdRecord.membership || key.sk === HouseholdRecord.household) return id;
+    if (key.sk.startsWith('MEMBER#') || key.sk.startsWith('PROFILE#'))
+      return `${id}\0${key.sk.slice(key.sk.indexOf('#') + 1)}`;
+    return `${key.pk}\0${key.sk}`;
+  }
+  private pendingMemoryMap(key: HouseholdStorageKey): Map<string, HouseholdRecordValue> {
+    let map: Map<string, unknown>;
+    if (key.sk.startsWith('IDEMPOTENCY#CHILD#')) map = this.childReplays;
+    else if (key.sk === HouseholdRecord.membership) map = this.lookups;
+    else if (key.sk === HouseholdRecord.household) map = this.households;
+    else if (key.sk.startsWith('MEMBER#')) map = this.memberships;
+    else if (key.sk.startsWith('PROFILE#')) map = this.profiles;
+    else map = this.pendingRows;
+    return map as Map<string, HouseholdRecordValue>;
+  }
+
   private readonly lookups = new Map<string, MembershipLookup>();
   private readonly households = new Map<string, Household>();
   private readonly memberships = new Map<string, Membership>();
@@ -349,8 +492,13 @@ export class InMemoryHouseholdRepository implements HouseholdRepository {
   constructor(private readonly id = randomUUID) {}
 
   async resolveMembership(sub: string, tokenIssuedAt?: number): Promise<MembershipResolution> {
+    if (await isRevoked(this.recordStore, sub)) return { kind: MembershipResolutionKind.inactive };
     const lookup = this.lookups.get(sub);
-    if (!lookup) return { kind: MembershipResolutionKind.unattached };
+    if (!lookup) {
+      if (await isRevoked(this.recordStore, sub))
+        return { kind: MembershipResolutionKind.inactive };
+      return { kind: MembershipResolutionKind.unattached };
+    }
     const household = this.households.get(lookup.householdId);
     const membership = this.memberships.get(
       membershipStorageKey(lookup.householdId, lookup.memberId),
@@ -360,6 +508,7 @@ export class InMemoryHouseholdRepository implements HouseholdRepository {
   }
 
   async bootstrap(input: BootstrapInput): Promise<BootstrapResult> {
+    if (await isRevoked(this.recordStore, input.sub)) return { kind: 'already-member' };
     const replayKey = inMemoryReplayKey(input.sub, input.idempotencyKey);
     const inputHash = hashInput(input.name, input.timezone, input.username);
     const replay = this.replays.get(replayKey);
@@ -368,7 +517,9 @@ export class InMemoryHouseholdRepository implements HouseholdRepository {
         ? { kind: 'replayed', membership: structuredClone(replay.membership) }
         : { kind: 'idempotency-conflict' };
     }
-    if (this.lookups.has(input.sub)) return { kind: 'already-member' };
+    const blocked = revocationKey(input.sub);
+    if (this.lookups.has(input.sub) || this.pendingRows.has(`${blocked.pk}\0${blocked.sk}`))
+      return { kind: 'already-member' };
 
     const householdId = this.id();
     const memberId = this.id();
@@ -414,6 +565,9 @@ export class InMemoryHouseholdRepository implements HouseholdRepository {
   }
 
   async saveProfile(input: SaveProfileInput): Promise<SaveProfileResult> {
+    const member = this.memberships.get(membershipStorageKey(input.householdId, input.memberId));
+    if (!member || member.activationState !== MembershipActivationState.active)
+      return { kind: 'conflict', profile: null };
     const key = profileStorageKey(input.householdId, input.memberId);
     const existing = this.profiles.get(key) ?? null;
     if (!isExpectedProfileVersion(existing, input.version)) {
@@ -436,15 +590,7 @@ export class InMemoryHouseholdRepository implements HouseholdRepository {
     const directory = members.map((membership) => {
       const profile =
         this.profiles.get(profileStorageKey(householdId, membership.memberId)) ?? null;
-      if (!profile) throw missingProfileError();
-      return {
-        memberId: membership.memberId,
-        username: membership.username,
-        role: membership.role,
-        activationState: membership.activationState,
-        displayName: profile.displayName,
-        color: profile.color,
-      };
+      return directoryMemberFromMembership(membership, profile);
     });
     return sortDirectoryMembers(directory);
   }
@@ -639,15 +785,15 @@ function childReplayItem(sub: string, idempotencyKey: string, inputHash: string,
 }
 function directoryMemberFromMembership(
   membership: Membership,
-  profile: Profile,
+  profile: Profile | null,
 ): FamilyDirectoryMember {
+  if (!profile && membership.role !== HouseholdRole.parent) throw missingProfileError();
   return {
     memberId: membership.memberId,
     username: membership.username,
     role: membership.role,
     activationState: membership.activationState,
-    displayName: profile.displayName,
-    color: profile.color,
+    ...(profile ? { displayName: profile.displayName, color: profile.color } : {}),
   };
 }
 
@@ -803,15 +949,16 @@ function profileFromItem(item: Record<string, AttributeValue>): Profile {
 
 function directoryMemberFromStoredItem(
   membership: Record<string, AttributeValue>,
-  profile: Profile,
+  profile: Profile | null,
 ): FamilyDirectoryMember {
+  if (!profile && requiredMembershipRole(membership.role) !== HouseholdRole.parent)
+    throw missingProfileError();
   return {
     memberId: requiredStringAttribute(membership.memberId),
     username: requiredStringAttribute(membership.username),
     role: requiredMembershipRole(membership.role),
     activationState: requiredActivationState(membership.activationState),
-    displayName: profile.displayName,
-    color: profile.color,
+    ...(profile ? { displayName: profile.displayName, color: profile.color } : {}),
   };
 }
 

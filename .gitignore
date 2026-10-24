@@ -28,6 +28,7 @@ terraform/*.tfplan
 # cognito-local: local-only synthetic auth state, never committed.
 # .cognito/config.json IS committed (non-secret local dev tool settings).
 .cognito/db/
+.local-dev/
 
 
 .agents/

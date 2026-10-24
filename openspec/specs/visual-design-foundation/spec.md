@@ -6,7 +6,15 @@ Establish Todone's shared accessible visual language, role-aware shell, interact
 ## Requirements
 
 ### Requirement: Mature Nature-Inspired Visual Language
-Todone SHALL use one light-only, nature-inspired visual language built from deep forest anchors, profile-derived tonal personal surfaces, warm readable form/settings surfaces, and stable semantic state colors. The visual language SHALL define centralized authored tokens for color, typography, spacing, shape, elevation, iconography, focus, disabled, status, and motion states plus accessible tonal families for every canonical profile color. Framework utilities SHALL resolve through those authored tokens rather than making a stock framework palette the product language. It SHALL feel appropriate to adolescents and adults and SHALL NOT introduce mascots, animals, illustrated task objects, emoji decoration, points, streaks, rewards, rare/jackpot outcomes, sound, or vibration.
+
+Todone SHALL use one light-only, nature-inspired visual language built from deep forest anchors, profile-derived tonal personal surfaces, warm readable form/settings surfaces, and stable semantic state colors.
+
+#### Scenario: Authored visual tokens and excluded treatments
+
+- **WHEN** a Todone surface or its shared visual tokens are implemented
+- **THEN** The visual language SHALL define centralized authored tokens for color, typography, spacing, shape, elevation, iconography, focus, disabled, status, and motion states plus accessible tonal families for every canonical profile color.
+- **AND** Framework utilities SHALL resolve through those authored tokens rather than making a stock framework palette the product language.
+- **AND** It SHALL feel appropriate to adolescents and adults and SHALL NOT introduce mascots, animals, illustrated task objects, emoji decoration, points, streaks, rewards, rare/jackpot outcomes, sound, or vibration.
 
 #### Scenario: Dense family surface uses the shared language
 - **WHEN** a family-management or Todo surface presents primary actions with supporting metadata
@@ -25,14 +33,30 @@ Todone SHALL use one light-only, nature-inspired visual language built from deep
 - **THEN** the artwork is static, supplementary, visually reviewed at production quality, and omitted when it would read as generic clip art, childish identity imagery, or essential content
 
 ### Requirement: System-Compatible Typography and Components
-Todone SHALL use a system-first sans-serif font stack that remains legible and structurally consistent across supported laptop, iPhone, and iPad browsers without requiring a remote font. Shared components SHALL use generous touch targets, restrained rounded geometry/elevation for genuinely bounded controls and surfaces, consistent outline icons, and responsive content hierarchy without clipping long family or Todo content. Active Todo lists SHALL present full-bleed continuous rows rather than a stack of individually floating cards.
+
+Todone SHALL use a system-first sans-serif font stack that remains legible and structurally consistent across supported laptop, iPhone, and iPad browsers without requiring a remote font.
+
+#### Scenario: Responsive shared component geometry
+
+- **WHEN** shared components or active Todo lists are rendered
+- **THEN** Shared components SHALL use generous touch targets, restrained rounded geometry/elevation for genuinely bounded controls and surfaces, consistent outline icons, and responsive content hierarchy without clipping long family or Todo content.
+- **AND** Active Todo lists SHALL present full-bleed continuous rows rather than a stack of individually floating cards.
 
 #### Scenario: Preferred font is unavailable
 - **WHEN** a device renders Todone using a fallback system font
 - **THEN** headings, labels, controls, metadata, and Todo rows retain their intended hierarchy without overlap or truncation of essential content
 
 ### Requirement: Role-Prioritized Application Shell
-The signed-in application shell SHALL use canonical `/todos` as the child landing destination. Until the Todo capability is delivered, `/todos` SHALL identify itself as work in progress and SHALL NOT fabricate data, controls, loading states, or availability. Once delivered, the shell SHALL prioritize assigned active Todos and completion for children. It SHALL provide parents a prominent keyboard-accessible path to create and assign a one-off Todo whenever that capability is available, while preserving clear household/member context and access to available family management and history. Responsive composition SHALL NOT change authorization or hide the only path to an available primary action.
+
+The signed-in application shell SHALL use canonical `/todos` as the child landing destination.
+
+#### Scenario: Capability-aware shell destinations and actions
+
+- **WHEN** the signed-in shell is rendered before or after Todo delivery at any supported viewport
+- **THEN** Until the Todo capability is delivered, `/todos` SHALL identify itself as work in progress and SHALL NOT fabricate data, controls, loading states, or availability.
+- **AND** Once delivered, the shell SHALL prioritize assigned active Todos and completion for children.
+- **AND** It SHALL provide parents a prominent keyboard-accessible path to create and assign a one-off Todo whenever that capability is available, while preserving clear household/member context and access to available family management and history.
+- **AND** Responsive composition SHALL NOT change authorization or hide the only path to an available primary action.
 
 #### Scenario: Child enters the application
 - **WHEN** an active child session resolves successfully
@@ -57,7 +81,17 @@ A page SHALL consume session, membership, and profile prerequisites already reso
 - **THEN** the destination heading receives focus without a repeated session-restoration screen, and each navigation still checks current membership and profile
 
 ### Requirement: Rewarding Server-Confirmed Completion Feedback
-Todo completion feedback SHALL begin its celebratory phase only after the server confirms success. The confirmed interaction SHALL provide a brief, local pop and one of a small reviewed family of equally prominent nature-inspired light/shape/motion treatments, resolve the row to an explicitly completed lower-emphasis appearance, and remove it from the active list within a few seconds. The client SHALL select the effect by hashing the stable Todo ID into the approved effect list so retry/reopen behavior is deterministic without persisted reward state. Selection SHALL NOT assign, communicate, collect, or reward rarity. Feedback SHALL NOT use sound, vibration, emoji, scores, streaks, or motion that blocks the next action. A visible labelled control SHALL remain available even if supplementary swipe completion is implemented.
+
+Todo completion feedback SHALL begin its celebratory phase only after the server confirms success.
+
+#### Scenario: Deterministic accessible completion treatment
+
+- **WHEN** server-confirmed completion feedback is implemented or presented
+- **THEN** The confirmed interaction SHALL provide a brief, local pop and one of a small reviewed family of equally prominent nature-inspired light/shape/motion treatments, resolve the row to an explicitly completed lower-emphasis appearance, and remove it from the active list within a few seconds.
+- **AND** The client SHALL select the effect by hashing the stable Todo ID into the approved effect list so retry/reopen behavior is deterministic without persisted reward state.
+- **AND** Selection SHALL NOT assign, communicate, collect, or reward rarity.
+- **AND** Feedback SHALL NOT use sound, vibration, emoji, scores, streaks, or motion that blocks the next action.
+- **AND** A visible labelled control SHALL remain available even if supplementary swipe completion is implemented.
 
 #### Scenario: Completion succeeds
 - **WHEN** the server confirms that an authorized actor completed an active Todo
@@ -76,7 +110,15 @@ Todo completion feedback SHALL begin its celebratory phase only after the server
 - **THEN** it does not delay input, focus, scrolling, confirmed-state presentation, or row removal and its complexity is adjusted when measured browser behavior shows visible jank or long main-thread work
 
 ### Requirement: Incremental Design Review
-Every change that introduces or materially alters a user-facing surface SHALL include a quick standalone HTML reference presented for human review before final implementation and retained as a decision reference. Exploration SHALL cover the primary compact state, materially different responsive compositions, realistic metadata, and applicable loading, empty, error, success, disabled, conflict, and destructive states. After implementation, review SHALL use the real application with documented UX journeys and SHALL include real implementation screenshots, keyboard/focus behavior, contrast, reduced motion, 320-pixel reflow, and 200-percent zoom. A second post-implementation mockup SHALL NOT be required.
+
+Every change that introduces or materially alters a user-facing surface SHALL include a quick standalone HTML reference presented for human review before final implementation and retained as a decision reference.
+
+#### Scenario: Reference exploration and direct application acceptance
+
+- **WHEN** a change introduces or materially alters a user-facing surface
+- **THEN** Exploration SHALL cover the primary compact state, materially different responsive compositions, realistic metadata, and applicable loading, empty, error, success, disabled, conflict, and destructive states.
+- **AND** After implementation, review SHALL use the real application with documented UX journeys and SHALL include real implementation screenshots, keyboard/focus behavior, contrast, reduced motion, 320-pixel reflow, and 200-percent zoom.
+- **AND** A second post-implementation mockup SHALL NOT be required.
 
 #### Scenario: Feature introduces a new screen
 - **WHEN** a change adds a family, Todo, history, label, or recurrence screen

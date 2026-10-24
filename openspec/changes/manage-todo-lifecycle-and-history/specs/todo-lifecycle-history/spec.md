@@ -53,7 +53,15 @@ The completing child SHALL be able to undo their own completed Todo from history
 - **THEN** the request is denied and the Todo remains completed
 
 ### Requirement: Explicit Parent Deletion
-Only a parent SHALL be able to delete a Todo from the product, including an active, completed, or archived Todo. The application SHALL require explicit confirmation and SHALL explain that the Todo disappears from all user-visible lists and history. Deletion SHALL retain a full restricted internal audit snapshot of the deleted Todo and completion metadata. The audit snapshot SHALL NOT appear in product APIs or user interfaces and SHALL be purged when full account removal requires deletion of the associated member's data.
+
+Only a parent SHALL be able to delete a Todo from the product, including an active, completed, or archived Todo.
+
+#### Scenario: Deletion confirmation and restricted audit retention
+
+- **WHEN** Todo deletion is requested, confirmed, retained for audit, or affected by full account removal
+- **THEN** The application SHALL require explicit confirmation and SHALL explain that the Todo disappears from all user-visible lists and history.
+- **AND** Deletion SHALL retain a full restricted internal audit snapshot of the deleted Todo and completion metadata.
+- **AND** The audit snapshot SHALL NOT appear in product APIs or user interfaces and SHALL be purged when full account removal requires deletion of the associated member's data.
 
 #### Scenario: Parent cancels deletion
 - **WHEN** a parent dismisses the deletion confirmation

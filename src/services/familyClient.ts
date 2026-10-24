@@ -13,8 +13,8 @@ export interface FamilyMember {
   username: string;
   role: FamilyMemberRole;
   activationState: FamilyMemberState;
-  displayName: string;
-  color: ProfileColorId;
+  displayName?: string;
+  color?: ProfileColorId;
   allowedActions: PendingParentAction[];
 }
 

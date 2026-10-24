@@ -27,6 +27,7 @@ describe('App', () => {
       expect(navigation.findAll('a').map((link) => link.attributes('href'))).toEqual([
         role === 'child' ? '/todos' : '/family',
         '/profile',
+        ...(role === 'parent' ? ['/security'] : []),
       ]);
       expect(navigation.get('[aria-current="page"]').attributes('href')).toBe(
         role === 'child' ? '/todos' : '/family',

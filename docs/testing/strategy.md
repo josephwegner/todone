@@ -38,6 +38,14 @@ Infrastructure validation executes in the separate `family-paas` repository. Tha
 
 ## Offline development
 
+For a clean review household with **two active parents and one child**, stop all local services,
+run `npm run db:reset:local`, then run `npm run dev:full`. This explicitly wipes all emulator
+identities and generated fixture state. See [local-database.md](local-database.md) for credentials,
+SSH/listener guards, restart behavior and `npm run test:e2e:local-seed`. Seeded active parents are
+local fixtures; ordinary native email verification remains unsupported and is never bypassed.
+The original non-destructive Cognito bootstrap below remains available when a full wipe is unwanted.
+
+
 Todone supports an entirely local authentication workflow through the development-only `cognito-local` emulator. It is not an AWS account, does not require internet access after dependencies are installed, and its pool/client/user database is ignored in `.cognito/db/`.
 
 Bootstrap it once from the repository root:
@@ -68,7 +76,7 @@ The local API simulator also exposes `POST /api/v1/family-members/children` and 
 
 After the setup and `npm run dev:full` commands above, run `npm run test:e2e:local-auth`. Its separate local Playwright configuration targets port 3001, uses real emulator authentication and local API requests, and disables credential-bearing trace/screenshot/video artifacts. The smoke creates a disposable local child, observes the unavailable reset, then signs in with that child's original password. The in-memory household data resets whenever the API process restarts; local Cognito identities persist in the ignored emulator database.
 
-To reset local identities, stop the emulator, delete `.cognito/db/`, delete `.env.local`, and repeat the bootstrap steps. This deletes synthetic local data only.
+To wipe and restore the review dataset, stop the full local stack and run `npm run db:reset:local`. This removes all ignored emulator identities and replaces the generated seed manifest while preserving unrelated `.env.local` entries and tracked configuration. Restart with `npm run dev:full`; see `local-database.md`.
 
 ## Test layers
 
@@ -189,3 +197,47 @@ A failing required check blocks release. Flaky tests are failures to diagnose, n
 The bootstrap production smoke uses an explicitly authorized synthetic first-parent identity: exercise the configured registration gate, email confirmation, sign-in, household creation, current-tab restoration, sign-out, Forgot Password, invalid/closed registration, and privacy-safe log inspection. It happens only after explicit human deployment authorization. The release owner removes or clearly identifies the synthetic household according to the approved production-data procedure; agents do not run this smoke autonomously.
 
 Agents do not run this smoke autonomously. If deployment is not authorized, record local and plan evidence and leave the production task incomplete.
+
+## Pending activation race verification
+
+Automated repository/handler tests must schedule activation against email replacement, resend,
+and cancellation in both orders. Cover the conditional guard and state version, missing legacy
+binding, old verified email retained by Cognito, signed-but-stale email claims, missing/false or
+forged proof, repeated activation, uncertain partial outcomes, and suspended external calls.
+Timeout/lease expiry must never allow overlapping external writers. Test real SDK storage and
+session-generation behavior through password challenge, native attribute verification, renewal,
+and retries; a mocked success callback cannot prove persistence or activation security.
+
+Browser tests cover separately labelled setup/verification codes, invalid/expired code, resend,
+conflict refresh, secret-free navigation/history and accessible feedback. Locally verify the same
+documented startup commands. If cognito-local cannot enforce native verification, explicitly
+refuse activation before any Membership transition and label the unsupported parity. Do not
+manufacture verified claims in the emulator. Real Cognito delivery, code-to-current-email binding,
+staged updates, renewed claims, and the built-in sender quota remain human release checks until
+proved against that provider; deterministic service-boundary tests remain automated evidence.
+
+## Deleted-identity token boundary
+
+The approved deletion-retention exception is a temporary `REVOKED#SHA-256(sub)/REVOCATION`
+record containing no raw identity, member ID, username, name, email, or history. Child removal
+publishes it atomically with inactive Membership copies before cleanup can remove the lookup.
+Membership resolution and household bootstrap check it before treating an identity as unattached.
+An incomplete removal retains non-expiring ownership for operator repair. After confirmed Cognito
+deletion, remove ownership and set numeric `expiresAt` to deletion time plus the configured
+one-hour ID-token lifetime and 60-second tolerance. Pending-parent cancellation uses the same
+bound. No raw child identity survives successful removal; completed replay references associated
+with that child are purged. The marker logically expires independently of eventual DynamoDB TTL
+cleanup. A reused username has a new unrelated `sub` and cannot recover old identity access.
+
+Verify stale-token bootstrap during/after deletion, partial cleanup, completed replay, reference
+purge, token-bound marker expiry, and username reuse. Terraform vendors the pinned table module
+with only TTL added, preserving the existing table resource address, keys, PITR, encryption, and
+deletion protection. Reject any replacement plan; no apply/deploy is authorized. Rollback must
+retain revocation-aware Membership/bootstrap checks until all relevant old JWTs have expired.
+
+The additional `npm run test:e2e:parent-activation` suite starts a local Vite build configured for
+the normal production SRP adapter on port 3003. Its HTTP fixture intercepts every Cognito request
+with synthetic responses and blocks other remote hosts. It covers real SDK password challenge,
+native email verification, invalid-code recovery, token renewal, and activation UI success without
+turning off the emulator's explicit unsupported-verification gate. It is automated adapter/UI
+evidence, not real AWS email-delivery evidence. Run it alongside ordinary e2e/a11y suites.

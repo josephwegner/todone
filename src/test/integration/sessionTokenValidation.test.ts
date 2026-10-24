@@ -19,6 +19,7 @@ const jwk = {
 function token(overrides: Record<string, unknown> = {}, invalidSignature = false) {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
   const payload = {
+    token_use: 'id',
     iss: issuer,
     aud: audience,
     sub: 'private-sub-canary',
@@ -36,6 +37,8 @@ afterEach(() => vi.unstubAllGlobals());
 describe('actual token validation through the local API boundary', () => {
   it.each([
     ['valid', {}, false, 200],
+    ['access token substitution', { token_use: 'access' }, false, 401],
+    ['missing token use', { token_use: undefined }, false, 401],
     ['wrong issuer', { iss: 'https://wrong.invalid/pool' }, false, 401],
     ['wrong audience', { aud: 'another-client' }, false, 401],
     ['expired', { exp: Math.floor(Date.now() / 1000) - 60 }, false, 401],

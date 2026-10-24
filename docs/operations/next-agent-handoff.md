@@ -1,59 +1,265 @@
-# Next-agent handoff: parent invitations and activation
+# Next-agent handoff: family account management
 
-## Scope and state
+## Implemented scope
 
-The child credential slice is complete: `manage-family-accounts` tasks 4.1–4.4 implement child creation, permanent password reset, global sign-out, lookup-owned credential cutoff, parent UI, and authorization/privacy tests. The next requested slice is section 5: additional-parent provisioning, setup-code activation, pending actions, and private recovery email. Child removal/cascade remains section 6; it is not implemented. Full-change acceptance tasks 7.1–7.4 remain unchecked because they also cover those unfinished features and final human release review.
+`manage-family-accounts` now implements pending-parent creation, real SDK password challenge,
+native email-attribute verification and self activation, guarded resend/change/cancel, private
+parent recovery email, and confirmed child removal. Existing child creation/reset, profiles,
+directory, canonical routing and session boundaries remain part of this change. The baseline feature
+was committed at `7e0a4a4`; subsequent PR activation corrections are recorded below. No deployment,
+artifact publication, Terraform apply, or production smoke occurred.
 
-The owner committed child creation as `2e83c02` (`create children`). The working tree contains the subsequent reset implementation and verification changes; preserve them. This handoff does not imply a commit or production release. Infrastructure tasks 2.4–2.5 were previously applied and tested by the owner. No deployment, artifact publication, Terraform apply, or production smoke occurred during the child-reset slice.
+Activation requires a server-verified ID token with verified email matching the current private
+salted binding. Password setup alone grants no household access. Both Membership copies change
+atomically. Pending activation/resend/email/cancel share a conditional owner with no TTL or lease
+takeover; uncertain outcomes retain ownership for quiesced operator repair. No administrative
+operation marks an email verified. Recovery stages only email, with native verification and
+renewal owning promotion; the old verified address remains until then.
 
-## Child credential behavior
+The owner approved a temporary hash-only deleted-identity revocation marker on 2026-10-20.
+Removal atomically marks Membership inactive and creates non-expiring revocation ownership,
+runs every `childRemovalSteps` cascade entry (Profile and child-creation replay references), deletes
+both Membership copies, deletes Cognito by immutable `sub`, then sets marker expiry to confirmed
+deletion plus one-hour ID-token validity and 60 seconds of tolerance. Resolution and bootstrap
+both enforce it. Success retains no raw child identity/application record; completion replay uses
+only the hashed target. Pending cancellation deletes by immutable `sub` and uses the same token-bound marker. Profile writes
+condition on active Membership so an in-flight write cannot recreate a removed Profile. Every
+future Todo/history/recurrence entity must extend the registry and its failure tests.
 
-- Parents create children at `/family/children/new`. The compact create action stays beside the family heading. Passwords are immediate request/control values and never become replay-record input.
-- An active child row links to `/family/children/:memberId/password`. This route is parent-only, resolves the opaque member ID through the authorized household directory, identifies the child, shares password-policy guidance, and clears passwords on submission, target/path changes, cancel, Back/Forward, reload, and session loss. Inaccessible targets return safely to `/family`.
-- `PUT /api/v1/family-members/{memberId}/password` accepts exactly `password`, has no idempotency key, and never automatically retries. It authenticates the caller, requires an active parent, and strongly reads a target scoped to that parent's household. Parent/pending/inactive targets receive `403`; cross-household and absent targets receive the same `404`.
-- Production performs permanent Cognito password replacement, `AdminUserGlobalSignOut`, then monotonic `credentialsValidAfter` advancement. It returns empty, `no-store` `204` only after all complete. The cutoff exists only on `USER#<sub>/MEMBERSHIP`; conditional writes cannot create a missing lookup or lower its cutoff. A concurrent equal/newer cutoff is confirmed by a strong read.
-- Every ordinary household request rejects a missing or older/equal token `iat` after a cutoff. Cognito JWT timestamps have second precision: a token issued in the reset's own second is deliberately stale; sign in in a later second.
-- The approved failure policy remains manual operator handling. A failed password/sign-out/cutoff sequence can be partially applied, and an error is not evidence that old JWTs were revoked or the old password remains valid. The UI clears the password and blocks ordinary retry after an unconfirmed server failure. Operators must confirm sign-out and lookup cutoff before claiming revocation. Do not add an automatic repair state machine or parent-facing repair UI.
+## Infrastructure and rollback
 
-## Local development and testing
+Five additional Lambda artifacts/routes implement creation, activation, pending actions, recovery
+email and removal. Only administration handlers use the existing pool-scoped privileged role;
+activation uses the ordinary DynamoDB role. The build registry and Terraform outputs include all
+functions. Both app clients explicitly configure one-hour ID tokens. Native verification and the
+static welcome template distinguish the setup code from an email-verification code. Cognito uses
+the built-in sender (50 messages/day); no custom sender, SES configuration or auth trigger is added.
 
-Use `docs/testing/strategy.md`: start `npm run dev:cognito`, initialize with `npm run setup:local-cognito`, stop that standalone emulator, then start `npm run dev:full`. The frontend is port 3001, the in-memory API is port 3002, and Cognito is port 9229. Restart the stack after setup changes ignored `.env.local`.
+The pinned shared table module lacked a TTL input. `terraform/modules/todone-data-table` vendors
+that exact `family-paas` revision (`beb37ef0e19d896984cb3c16165b2307e38fdf31`) with only numeric
+`expiresAt` TTL enabled. Its existing `module.table.aws_dynamodb_table.this` address, keys, name,
+encryption, PITR and deletion protection are preserved in source. Review a fresh state-backed
+plan for zero table replacement before any release; source preservation is not live-plan evidence.
+Other external modules remain pinned. The lockfile adds the Linux checksum without changing
+provider version. See `deployment-rollback.md` for the guard/revocation-aware rollback boundary.
 
-Local Cognito administration requires explicit `TODONE_LOCAL_DEVELOPMENT=true` plus a loopback `COGNITO_LOCAL_ENDPOINT`; the pool ID remains required. Every local household handler injects the same in-memory repository. Do not direct local routes to production DynamoDB or bypass authentication/target checks.
+Terraform 1.9.8 was downloaded to `/tmp/todone-terraform-bin/terraform` and verified against the
+published SHA256SUMS. Backend-free initialization, recursive format, and provider validation pass.
+State-backed backend initialization fails with no valid AWS credentials (`/tmp/todone-family-terraform-backend.log`),
+so no current live plan exists. Earlier `/private/tmp` plan/artifact claims from the prior handoff
+are historical and must not be used for this working tree. Never apply a placeholder-input plan.
 
-`cognito-local` does not implement `AdminUserGlobalSignOut`. The simulator therefore returns `503 PASSWORD_RESET_UNAVAILABLE` after authorization and before any credential mutation, with an explicit “No password was changed” message. Never suppress that failure and report success. Deterministic Cognito-boundary and repository tests prove the complete reset sequence; an AWS release smoke owns successful managed-service behavior.
+## Verification and handoff
 
-`npm run test:e2e:local-auth` uses `playwright.local.config.ts` against the already-running port-3001 stack. It performs real local authentication, household/profile setup when needed, child creation, the unsupported-reset check, and sign-in with the original child password. It creates disposable local Cognito identities. Household data is in memory and disappears when the API restarts; emulator identities persist in ignored `.cognito/db/`. Traces, screenshots, and videos are disabled for this real-auth suite. The ordinary e2e/a11y suites instead use HTTP mocks and port 3000.
+Run the canonical commands in `docs/testing/strategy.md`. Detailed local startup, role/state/route
+journeys, expected outcomes and the distinction between automated, local and human-only evidence
+are in `docs/testing/family-account-management-verification.md`. The documented startup/setup and
+real-emulator three-test smoke passed on 2026-10-20. Emulator activation/recovery/reset explicitly
+refuse unsupported security parity before mutation; never manufacture verified claims.
 
-## Verification evidence (2026-10-19)
+Final verification evidence is recorded below after the final run. Logs and screenshots in `/tmp`
+and `test-results/` are transient local evidence, not durable release artifacts. The production
+SRP browser suite uses synthetic HTTP interception and does not send mail or contact real AWS.
 
-- `npm run verify-local`: formatting, lint, typecheck, 233 unit tests, 28 integration tests, production build, eight Lambda builds, and all 11 strict OpenSpec validations passed.
-- `npm run test:e2e -- --workers=2 --reporter=line`: 75 passed across Chromium compact/medium/wide, Firefox, and WebKit.
-- `npm run test:a11y -- --workers=2 --reporter=line`: 35 passed, including reset validation focus, 320-pixel reflow, enlarged text, and reduced motion. Reset screenshots at compact, medium, and wide were visually reviewed. Untracked screenshots live under `test-results/e2e-bootstrap-child-passwo-*/child-password-reset.png` until the next browser run.
-- The documented startup/setup commands and `npm run test:e2e:local-auth` passed against the real emulator. Processes started for verification are stopped at handoff.
-- Terraform format/validate passed. Independent read-only review found no remaining material issues within the approved manual-repair contract. Secret-canary assertions cover failure responses, request logging, and metrics; built-browser artifacts were checked separately.
+Operator repair commands and orphan classifications are in `family-account-repair.md`. Quiesce
+all delayed writers before conditionally releasing an uncertain owner. Preserve fail-closed
+Membership/revocation behavior during repair. Never print private input files or raw records.
 
-The verification log is `/private/tmp/todone-child-credentials-verification.log`. Temporary files are local evidence, not durable release records.
+## Remaining release gates
 
-## Infrastructure and release boundary
+The OpenSpec checklist remains the source of completion status. State-backed Terraform plan,
+actual browser 200% zoom/screen-reader and owner UX approval, and real Cognito delivery/staged-email
+checks remain outstanding. A required-check failure blocks release; no task is silently deferred.
+The release owner must publish reviewed artifacts and create/review a fresh full plan using the
+real protected inputs after authorization. This handoff grants no deploy/apply/smoke authority.
 
-`terraform/main.tf` adds the dedicated `reset_child_password_lambda` and protected PUT route. Creation/reset Lambdas use `family_account_admin_role_arn`; ordinary read/profile/session Lambdas retain the role without Cognito authority. No IAM expansion or pool schema change is needed. The build registry, Terraform required artifact map, and function/log outputs include `reset-child-password`. Artifact keys and hashes in `terraform/todone.auto.tfvars.json` match the verified local build; nothing was uploaded.
+## Local build configuration
 
-The read-only plan `/private/tmp/todone-child-credentials.tfplan` used `-refresh=false` and a non-secret placeholder registration-gate hash. It contains 12 additions, 14 updates, zero deletions, and zero replacements: the still-unreleased creation resources and reset resources, existing Lambda artifact/alias updates, and two existing app-client updates. Terraform reports those client updates despite identical before/after JSON attributes; treat them as requiring fresh release-plan review, not as approved configuration changes. The pre-signup environment also uses the placeholder hash. **Do not apply this plan.** A human release owner must publish reviewed artifacts and generate a fresh full plan with the real secret input. The log is `/private/tmp/todone-child-credentials-plan.log`.
+The frontend build is a local production-mode compilation after emulator setup, so ignored
+`.env.local` supplies development-only Cognito endpoints/IDs. It is verification evidence,
+not an authorized frontend release artifact. A release owner must rebuild with the reviewed
+release configuration; never publish this local-emulator frontend build. Lambda ZIPs contain
+runtime configuration placeholders and are identified below without uploading them.
 
-The first-parent mailbox/confirmation/resend and server-staged recovery-email AWS checks remain human release evidence. Keep the existing PWA client identity and the email-only registration client distinct. All family-paas references remain pinned to `beb37ef0e19d896984cb3c16165b2307e38fdf31`; do not float to main. Cognito uses its built-in sender and static invitation template, with the accepted 50-message daily quota. Do not introduce SES/custom senders or custom-auth triggers.
+## Final verification evidence (2026-10-20)
 
-## Start the next slice
+- Format, lint and static typecheck passed. All 368 unit tests (48 files), 39 HTTP/integration
+  tests (six files), frontend production-mode compilation and all 13 Lambda builds passed.
+- `npm run verify-local` exits unsuccessfully at its final strict OpenSpec validation step:
+  five items pass and seven fail on warning-level long requirements and placeholder Purpose
+  text. These baseline documentation warnings remain a release gate; ordinary validation of
+  `manage-family-accounts` is valid with nine long-requirement warnings. No validator was weakened.
+- All 45 accessibility tests and all five real-SDK synthetic SRP/native-verification browser
+  tests passed. The three real-emulator smoke tests passed after the activation privacy fix.
+- Artifact canary scan includes browser files, Lambda bundles/catalogs and decompressed ZIP
+  entries; no seeded private values, passwords or setup codes were found. Diff whitespace
+  check passed, and changed files were reviewed for unrelated edits. No dependency was added.
+- Terraform recursive format and provider validation pass. Backend initialization cannot find
+  AWS credentials, so the current state-backed no-replacement plan is unavailable.
+- Actual browser zoom, screen-reader/owner review and live Cognito delivery/staging remain
+  human release evidence. Automated enlarged-text checks do not prove actual browser zoom.
 
-Read `AGENTS.md`, this handoff, and the active proposal/design/spec/tasks before editing. Shared API/data contracts are in `docs/architecture/`; authorization and threat boundaries in `docs/security/`; route/state/reference behavior in `docs/ux/`; verification commands in `docs/testing/strategy.md`.
+Logs: `/tmp/todone-family-final-verify.log`, `/tmp/todone-family-final-e2e.log`,
+`/tmp/todone-family-final-a11y.log`, `/tmp/todone-family-final-native.log`, and
+`/tmp/todone-family-emulator-smoke.log`. The final ordinary browser suite passed all 250 tests across all five configured projects.
+Representative synthetic screenshots under `/tmp/todone-family-browser-artifacts/` were reviewed
+at compact, medium and wide widths; these transient files are not owner UX approval.
+The real development stack started for verification was stopped after its smoke.
 
-Key files are `lambdas/cognito/administration.ts`, `lambdas/households/{model,repository,authorization,children,resetChildPassword}.ts`, `src/services/{authClient,familyClient}.ts`, `src/router/`, `src/components/ProductionBootstrap.vue`, and `src/i18n/en.yml`. Credential-focused tests are `src/test/lambdas/{childCredentials,credentialRepository,children}.test.ts`, `src/test/integration/childCredentials.test.ts`, and the browser/component/client tests.
+## Local Lambda artifact identifiers
 
-Start with task 5.1 as a complete pending-parent provisioning slice. Preserve these boundaries:
+These are unpublished ZIPs under `.lambda-build/`. Refresh hashes after any source edit and
+use the build script's `sourceCodeHash` values when preparing separately authorized release
+inputs; no existing tfvars or historical plan is current evidence for these builds.
 
-- Caller identity comes only from verified `sub`; household scope comes from active Membership. Authorize caller and target before any Cognito administration. Test fixtures must pass the same authorization code.
-- Usernames/roles are immutable. Profiles are self-only. Recovery email stays in Cognito and is absent from directory/peer responses and logs.
-- Pending parents lack household authority. Only the authenticated pending self may activate after `NEW_PASSWORD_REQUIRED`; mark only the already-configured email verified after setup-code possession, then activate both Membership copies atomically.
-- The authenticated PWA client remains restricted to the immutable browser-write guard; registration uses the separate email-write client only for registration/confirmation. Do not revive the superseded empty-allowlist proposal.
-- Passwords, setup/verification codes, emails, usernames, tokens, and mutation payloads never enter URLs/history, logs, metrics, caches, or application persistence. Use the shared English catalog for user-visible copy.
-- Parent peers cannot reset/remove/demote one another. Preserve dedicated privileged runtimes, generic failures, and operator-owned partial-outcome handling.
+| ZIP | SHA-256 |
+| --- | --- |
+| `activate-parent.zip` | `5f2853de406a342c59f2e40d894ad318ec6eb1cde958d6a3836b71c65e58e7e1` |
+| `create-child.zip` | `1319d129d07f7d4b4edbc746c772284fd9d0f22560d66018ce1339fdf611481d` |
+| `create-household.zip` | `3369b76b039930efdd5c25dce810f0f51003886254f78ba58d9e62cdd6a2f5f4` |
+| `create-parent.zip` | `9b7d3c68a37556599859ed3a27ebe7955c55b581a152db1b7b77a89bd447c464` |
+| `current-membership.zip` | `5d88048ba93e8fe128d8d83f907b982ed7354b724921e5199b1c29287f55c902` |
+| `family-directory.zip` | `adf271c9ef23274bd0e7eb85a6a2cef6a5278db599084047d384a6d022a231d1` |
+| `pending-parent-actions.zip` | `762f409b33266c9f2d3bc174f1a6b5587cf372ee4bdcccbd6cfeb770528fff46` |
+| `pre-signup.zip` | `c1ab187db1498df46aabd4bf8d216b5c7d97da80f0b76d2e94f38febba2dca5d` |
+| `profile.zip` | `8fa0c29e7241be4e7599d66e72a4da86f53c8162053c56deaea3e0f1c9439180` |
+| `recovery-email.zip` | `f71edaf305d42ae5d192c2527992315780690eea29ace72d5803b1380d15c4a3` |
+| `remove-child.zip` | `f1b98679efd257f6b0bb5bf9c32e8911db2fefcc208bea7a006a3e5bc30f6fd9` |
+| `reset-child-password.zip` | `7848734b4db3905e426b503b62e6eaa5728dcc13507bb51af390c34eb9c0a51b` |
+| `session.zip` | `a77ec3343c889ff9baddbf8463e717d327a21087a491583c0a2969d5d0d93509` |
+
+## Checklist reconciliation
+
+The current change is 33/37 tasks complete. This implementation completed 5.0a–5.5,
+6.1, 6.3–6.4 and 7.4. Remaining: 6.2 (implemented removal/TTL source, missing live
+no-replacement plan), 7.1–7.2 (actual zoom, screen-reader and owner UX review), and
+7.3 (strict OpenSpec warnings and unavailable AWS plan). None is intentionally deferred
+or approved as an exception. Real provider release checks remain explicitly human-owned.
+The code is not described as release-ready, and the change has not been archived.
+
+## Verification follow-up
+
+Strict OpenSpec validation now passes all 12 items with zero warnings. Seven spec files were
+restructured: long requirement introductions became concise introductions plus named acceptance
+scenarios, preserving all 88 moved normative sentences verbatim; three placeholder Purpose
+sections now describe their existing capabilities. No application requirement or runtime behavior
+changed. The earlier strict-validation failure above is historical evidence, not a current blocker.
+A fresh backend-initialization check still reports no valid AWS credential sources, and there is
+no configured outbound AWS identity manifest in this workspace. The current plan gate remains
+open; a connected AWS session/profile must provide backend-state and infrastructure-read access.
+Never share credential values in chat. No plan was applied and no resource was deployed.
+
+The owner review document now begins with six prioritized, executable checks and expected
+outcomes. It distinguishes local unsupported operations from separately authorized real-provider
+verification. Checklist tasks 6.2 and 7.1–7.3 remain open until their entire acceptance criteria,
+including the AWS plan and human review, are satisfied. None is silently deferred.
+
+The follow-up `npm run verify-local` passed completely: format, lint, static typecheck, 368 unit
+tests, 39 integration tests, frontend build, 13 Lambda builds and all 12 strict spec validations.
+The documented real local stack was restarted and its three-test browser smoke passed again.
+It is intentionally left running on workspace port 3001 for the owner's review; local API and
+Cognito run on ports 3002 and 9229. Its private log is `/tmp/todone-family-human-review-stack.log`;
+smoke evidence is `/tmp/todone-family-human-review-smoke.log`. This supersedes the earlier
+stopped-stack note for the current handoff. No deployment or infrastructure apply occurred.
+
+## Local two-parent review seed
+
+The owner-approved task 8.1 adds `npm run db:reset:local`. It wipes only ignored emulator data and
+publishes an identity-bound local fixture manifest for two active parents and one child. See
+`docs/testing/local-database.md` for exact credentials, clean reset/startup commands, expected
+outcomes, SSH/listener refusal, and the separate persistence behavior of emulator identities and
+in-memory application data. The normal native-verification gate remains unsupported and closed.
+No fixture or development password enters frontend/Lambda builds; all 13 Lambda hashes remain
+unchanged. The existing non-destructive `setup:local-cognito` interface is retained through a shared
+loopback-only setup adapter. No dependency was added and no production resource was touched.
+
+Verification passed: 385 unit tests (49 files), 39 integration tests, format/lint/typecheck, frontend
+and 13 Lambda builds, and all 12 strict OpenSpec validations. The real-emulator seeded browser suite
+passed for both parents and the child, including self-only profile writes, peer reset/removal denial
+and unsupported recovery staging. All three existing local-auth browser tests also passed. Actual
+reset runs proved a fresh pool and three-identity manifest, preservation of unrelated environment
+entries, private manifest permissions and cleanup of temporary reset state. Reset correctly refused
+an occupied development port before deletion. A final reset removed additional smoke identities;
+all development ports (3001, 3002, 9229) were confirmed closed on IPv4 and IPv6.
+
+Logs: `/tmp/todone-seed-final-verify.log`, `/tmp/todone-seed-browser.log`,
+`/tmp/todone-seed-existing-smoke.log`, `/tmp/todone-seed-final-reset.log` and
+`/tmp/todone-seed-busy-reset.log`. The local stack is intentionally stopped for the owner's SSH
+bridge. The change is now 34/38 tasks complete; tasks 6.2 and 7.1–7.3 retain their existing AWS-plan
+and human-review gates. No task was silently deferred, and no deploy/apply/archive was performed.
+
+## Owner review corrections: invitation and child actions
+
+Tasks 9.1–9.2 implement the owner's feedback. New-parent invitations collect exactly username/email;
+the API rejects peer-supplied displayName/color and writes no Profile. A pending or newly active
+parent without a Profile appears by username/state without a fabricated hue. Missing child Profiles
+still fail closed. Cancellation supports missing and legacy-present Profiles. After native activation,
+existing session guards require self-only `/profile/setup` before Family, including Back/reload/deep
+links. The local `localparent2` fixture is active but unconfigured, so its first login exercises this
+screen without provider email; API restart repeats its setup because application data is in memory.
+First-parent/child fixtures remain configured, and ordinary pending verification gates stay closed.
+
+Child password-reset navigation and removal mutation controls now share one responsive action group
+with aligned centers and equal 44px target heights. Compact wrapping and semantics are preserved.
+Representative compact/medium/wide screenshots were reviewed; automated desktop geometry asserts
+center/height differences below one pixel. The reference and canonical API/data/UX contracts reflect
+the revised first-login ownership. The two specific feedback items are implemented; prior manual
+zoom/screen-reader and AWS release gates have not been assumed complete or waived.
+
+Verification passed: `verify-local` (388 unit tests, 39 integration tests, builds and 12 strict spec
+validations), 250 ordinary browser tests, 45 accessibility tests, five synthetic real-SDK activation/
+first-profile browser flows, and both real-emulator suites (one seeded-household and three auth
+smokes). The real seed smoke now completes the second parent's own Profile before testing peer
+permissions. Artifacts were scanned for fixture passwords/email/setup-code canaries, and the Lambda
+hash table above is refreshed for this contract change. Frontend builds still contain local verification
+configuration and are not authorized release artifacts. No deploy/apply was performed.
+
+Evidence: `/tmp/todone-review-verify.log`, `/tmp/todone-review-e2e.log`,
+`/tmp/todone-review-a11y.log`, `/tmp/todone-review-activation.log`,
+`/tmp/todone-review-local-seed.log`, `/tmp/todone-review-local-auth.log`,
+`/tmp/todone-parent-review-browser/` and `/tmp/todone-parent-first-login/`.
+The temporary development stack was stopped again for the owner's SSH bridge.
+Current checklist: 36/40 complete; 6.2 and 7.1–7.3 remain open for the existing AWS-plan/human
+acceptance gates. No unfinished task is intentionally deferred.
+
+## PR #2 activation recovery corrections
+
+Both new review findings at `7e0a4a4` are addressed. Pending welcome/email-and-resend now read
+private provider invitation eligibility under the owner before mutation. Confirmed accounts
+receive safe conflict feedback without a retained guard or email change. Definitive pure-resend
+invalid-state/throttling and read-only failures release ownership; unknown mutations and
+email-update/resend splits remain closed for quiesced repair. The existing privileged role adds
+pool-scoped `AdminGetUser`; ordinary read/profile/self-activation roles do not gain this permission.
+Provider references: [administrative creation](https://docs.aws.amazon.com/cognito/latest/developerguide/how-to-create-user-accounts.html)
+and [AdminGetUser](https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_AdminGetUser.html).
+
+A pending session renews and attempts self activation independently on entry/restoration. Only
+server `EMAIL_VERIFICATION_REQUIRED` returns to native verification. After a consumed code and
+renewal/conflict/network failure, explicit Retry activation avoids code replay; conflict refreshes
+authority without rebuilding the pending page or automatically looping mutations. The server
+current-email binding and captured session generation remain authoritative.
+
+Verification for this correction:
+
+- `npm run verify-local`: passed, including 406 unit tests (50 files), 39 integration tests,
+  production frontend, all 13 Lambda builds, and 12 strict OpenSpec validations.
+- `npm run test:e2e`: 250 passed across the configured browser/viewport projects.
+- `npm run test:a11y`: 45 passed. Its pending-session fixture now supplies the entry proof check.
+- `npm run test:e2e:parent-activation`: 20 passed, including real SDK/synthetic HTTP conflict,
+  network and reload recovery, consumed-code no-replay assertions, and Axe on retry/profile states.
+- Compact and wide activation-retry screenshots were inspected. Automated checks do not replace
+  actual 200% zoom, screen-reader, owner UX, or live-provider release evidence.
+- Terraform recursive format and provider validation passed. No state-backed plan, apply,
+  deployment, production smoke, or live Cognito mutation was performed. The existing AWS-plan
+  and provider-only gates remain open.
+- Artifact canary scan covers browser/Lambda files and decompressed ZIP members. The hash table
+  above reflects the rebuilt unpublished ZIPs.
+
+Transient logs: `/tmp/todone-pr2-verify-current.log`, `/tmp/todone-pr2-e2e.log`,
+`/tmp/todone-pr2-a11y-final.log`, `/tmp/todone-pr2-activation-current.log`.
+Earlier failed/interrupted runs are superseded by these results. No real-emulator reset was
+needed for this correction; local unsupported-verification behavior remains explicitly denied.
+
+Checklist: 38/42 complete. Tasks 10.1 and 10.2 completed; 6.2, 7.1, 7.2 and 7.3 retain the
+previous AWS-plan/manual/provider evidence gates. None is intentionally deferred. This correction
+does not archive the change or claim release readiness.

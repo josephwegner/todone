@@ -43,7 +43,8 @@ export function createAuthSessionProvider(client: AuthClient): SessionProvider {
   return {
     restore: () => acquire(false),
     renew: () => acquire(true),
-    signIn: (username, password) => withProviderTimeout(client.signIn(username, password)),
+    signIn: (username, password, newPassword) =>
+      withProviderTimeout(client.signIn(username, password, newPassword)),
     signOut: () => client.signOut(),
   };
 }

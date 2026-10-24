@@ -63,11 +63,11 @@ export function createBrowserSessionProvider(
   const provider: SessionProvider = {
     restore: () => acquire(false),
     renew: (force) => acquire(true, force),
-    async signIn(username, password) {
+    async signIn(username, password, newPassword) {
       const stage = await storage.beginSignIn();
       const client = makeClient(stage.storage);
       try {
-        const result = await withProviderTimeout(client.signIn(username, password));
+        const result = await withProviderTimeout(client.signIn(username, password, newPassword));
         if (result.kind === 'error') return result;
         const marker = await storage.publish(stage);
         if (!marker) return { kind: 'cancelled' };

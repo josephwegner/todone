@@ -67,6 +67,7 @@ output "lambda_function_names" {
     { for name, lambda in module.lambdas : name => lambda.function_name },
     { "create-child" = module.create_child_lambda.function_name },
     { "reset-child-password" = module.reset_child_password_lambda.function_name },
+    { for name, lambda in module.parent_account_lambdas : name => lambda.function_name },
   )
 }
 
@@ -81,6 +82,7 @@ output "lambda_function_arns" {
     { for name, lambda in module.lambdas : name => lambda.function_arn },
     { "create-child" = module.create_child_lambda.function_arn },
     { "reset-child-password" = module.reset_child_password_lambda.function_arn },
+    { for name, lambda in module.parent_account_lambdas : name => lambda.function_arn },
   )
 }
 
@@ -93,6 +95,7 @@ output "lambda_qualified_arns" {
     { for name, lambda in module.lambdas : name => lambda.qualified_arn },
     { "create-child" = module.create_child_lambda.qualified_arn },
     { "reset-child-password" = module.reset_child_password_lambda.qualified_arn },
+    { for name, lambda in module.parent_account_lambdas : name => lambda.qualified_arn },
   )
 }
 
@@ -105,6 +108,7 @@ output "lambda_versions" {
     { for name, lambda in module.lambdas : name => lambda.version },
     { "create-child" = module.create_child_lambda.version },
     { "reset-child-password" = module.reset_child_password_lambda.version },
+    { for name, lambda in module.parent_account_lambdas : name => lambda.version },
   )
 }
 
@@ -125,6 +129,7 @@ output "log_group_names" {
     [for lambda in values(module.lambdas) : lambda.log_group_name],
     [module.create_child_lambda.log_group_name],
     [module.reset_child_password_lambda.log_group_name],
+    [for lambda in values(module.parent_account_lambdas) : lambda.log_group_name],
     [module.api.access_log_group_name],
   )
 }

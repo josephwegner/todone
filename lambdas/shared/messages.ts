@@ -3,6 +3,51 @@ import { join } from 'node:path';
 import { parse } from 'yaml';
 
 interface LambdaMessages {
+  parentAccounts: {
+    invalidRequest: string;
+    conflict: string;
+    unproven: string;
+    unavailable: string;
+    localUnsupported: string;
+    localRecoveryUnsupported: string;
+    invalidEmail: string;
+    createHeading: string;
+    createHelp: string;
+    profilePending: string;
+    createAction: string;
+    creating: string;
+    created: string;
+    activationHeading: string;
+    setupCode: string;
+    setupAction: string;
+    verifyHeading: string;
+    verifyCode: string;
+    verifyHelp: string;
+    verifyAction: string;
+    retryActivation: string;
+    activationRetryHelp: string;
+    welcomeUnavailable: string;
+    sendCode: string;
+    sentCode: string;
+    activationSuccess: string;
+    resend: string;
+    changeEmail: string;
+    cancelAccount: string;
+    cancelConfirmation: string;
+    confirm: string;
+    email: string;
+    actionSuccess: string;
+    uncertain: string;
+    securityHeading: string;
+    securityHelp: string;
+    replaceEmail: string;
+    verifyReplacement: string;
+    emailUpdated: string;
+    removeChild: string;
+    removeHelp: string;
+    removed: string;
+  };
+
   profileApi: {
     unsupportedFields: string;
     invalidDisplayName: string;

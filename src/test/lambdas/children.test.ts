@@ -21,7 +21,9 @@ function request(overrides: Partial<{ body: unknown; idempotencyKey: string }> =
     rawQueryString: '',
     headers: { 'idempotency-key': overrides.idempotencyKey ?? 'create-child-one' },
     requestContext: {
-      authorizer: { jwt: { claims: { sub: parentSub, 'cognito:username': 'parent-one' } } },
+      authorizer: {
+        jwt: { claims: { token_use: 'id', sub: parentSub, 'cognito:username': 'parent-one' } },
+      },
     },
     body: JSON.stringify(
       overrides.body ?? {
@@ -58,9 +60,12 @@ function administration(calls: string[], failure?: Error): CognitoAdministration
     async setPermanentPassword(username) {
       calls.push(`password:${username}`);
     },
+    async canResendWelcome() {
+      return true;
+    },
     async resendWelcome() {},
     async updatePendingParentEmail() {},
-    async markEmailVerified() {},
+    async stageRecoveryEmail() {},
     async deleteUser() {},
     async globalSignOut(username) {
       calls.push(`global-sign-out:${username}`);
@@ -183,8 +188,8 @@ describe('child provisioning handler', () => {
     );
 
     expect(response.statusCode).toBe(204);
-    expect(calls).toContain('password:child-one');
-    expect(calls).toContain('global-sign-out:child-one');
+    expect(calls).toContain('password:child-sub');
+    expect(calls).toContain('global-sign-out:child-sub');
     await expect(repository.resolveMembership('child-sub', 1788091200)).resolves.toEqual({
       kind: 'credentials-stale',
     });

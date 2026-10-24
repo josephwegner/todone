@@ -49,3 +49,12 @@ sequenceDiagram
 - A celebratory removal can disrupt orientation if it is too long or global. Keep feedback local and brief, preserve useful focus, and let the child continue with the next Todo immediately.
 - Extend the family-account removal cascade for the Todo entity introduced here. Delete all active and completed Todos assigned to the child before profile/identity deletion completes and username reuse is allowed.
 - Completed Todos are not rendered to parents or children in this change. The next lifecycle/history change consumes the persisted actor/time metadata for completion visibility.
+
+## Child-removal extension contract
+
+Register every child-associated record/history/audit type introduced here in
+`lambdas/households/childRemoval.ts` (`childRemovalSteps`) and add deletion and partial-failure
+coverage before this capability is complete. Keep profile/lifecycle writes conditional on active
+Membership so late writers cannot recreate purged data. The approved hash-only revocation marker
+blocks stale-token bootstrap after lookup deletion and expires after confirmed Cognito deletion
+plus configured token lifetime/tolerance; never retain raw removed-child identity or snapshots.

@@ -157,3 +157,42 @@ persistent application-data migration is introduced. Record shell/Lambda version
 outcome, new-tab/reload/sign-out results, and protected-cache absence without credentials or
 identity values. Actual release, cleanup publication, and rollback remain human-owned and
 require separate authorization; none was performed during implementation.
+
+## Pending-account guard release and rollback
+
+Keep activation and pending-account administrative endpoints disabled until the binding/guard-aware
+handlers, native email-verification flow, and supporting contracts ship together. Welcome/setup
+and verification messages both consume the existing built-in sender quota. Never deploy a build
+that infers verified email from password setup or invokes username-only `markEmailVerified`.
+
+An uncertain external outcome retains the lookup's pending-operation owner. Before repair, an
+authorized operator must stop new requests to the affected operations and establish that all
+in-flight handlers and delayed SDK requests have finished. Inspect Cognito and both Membership
+copies without printing raw records/contacts/credentials; reconcile the intended-email binding
+and state, then conditionally clear only the inspected owner/version. Do not use TTL, lease
+expiry, unconditional writes, or automatic retry. Pending records without binding metadata require
+operator repair/recreation. Detailed scoped repair procedures are part of the family-account
+runbook task; this contract does not authorize executing a repair.
+
+Rollback must retain guard-aware handlers or disable these endpoints pending repair. Do not return
+to the old username-only verification helper or allow delayed cancellation/email updates to act on
+an activated peer. No agent deployment, Terraform apply, production smoke, or repair is authorized.
+
+## Deleted-identity token boundary
+
+The approved deletion-retention exception is a temporary `REVOKED#SHA-256(sub)/REVOCATION`
+record containing no raw identity, member ID, username, name, email, or history. Child removal
+publishes it atomically with inactive Membership copies before cleanup can remove the lookup.
+Membership resolution and household bootstrap check it before treating an identity as unattached.
+An incomplete removal retains non-expiring ownership for operator repair. After confirmed Cognito
+deletion, remove ownership and set numeric `expiresAt` to deletion time plus the configured
+one-hour ID-token lifetime and 60-second tolerance. Pending-parent cancellation uses the same
+bound. No raw child identity survives successful removal; completed replay references associated
+with that child are purged. The marker logically expires independently of eventual DynamoDB TTL
+cleanup. A reused username has a new unrelated `sub` and cannot recover old identity access.
+
+Verify stale-token bootstrap during/after deletion, partial cleanup, completed replay, reference
+purge, token-bound marker expiry, and username reuse. Terraform vendors the pinned table module
+with only TTL added, preserving the existing table resource address, keys, PITR, encryption, and
+deletion protection. Reject any replacement plan; no apply/deploy is authorized. Rollback must
+retain revocation-aware Membership/bootstrap checks until all relevant old JWTs have expired.
