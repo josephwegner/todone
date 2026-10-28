@@ -1,10 +1,19 @@
 # household-membership Specification
 
 ## Purpose
-TBD - created by archiving change bootstrap-household-membership. Update Purpose after archive.
+Connect authenticated identities to server-authorized households through first-parent registration, verified recovery email, atomic household creation, and privacy-safe session and Membership resolution.
 ## Requirements
 ### Requirement: Username Session Lifecycle
-The application SHALL replace and remove the foundation's temporary sign-in probe. It SHALL provide production username/password sign-in, shared-browser session restoration, sign-out, and a first-parent registration flow. Usernames SHALL be immutable, case-insensitive, and globally unique across the user pool, while display names remain separate mutable application profile data. Cognito session persistence, renewal, and cross-tab sign-out SHALL follow the browser-session-management capability; the previous sessionStorage-only restriction is replaced by its narrowly scoped shared-browser auth-storage contract. The flow SHALL display loading, invalid-credential, duplicate-username, invalid-registration-gate, registration-closed, network-failure, retry, and signed-out states without exposing credential values.
+
+The application SHALL replace and remove the foundation's temporary sign-in probe.
+
+#### Scenario: Production session identity storage and feedback
+
+- **WHEN** production session flows are implemented or exercised
+- **THEN** It SHALL provide production username/password sign-in, shared-browser session restoration, sign-out, and a first-parent registration flow.
+- **AND** Usernames SHALL be immutable, case-insensitive, and globally unique across the user pool, while display names remain separate mutable application profile data.
+- **AND** Cognito session persistence, renewal, and cross-tab sign-out SHALL follow the browser-session-management capability; the previous sessionStorage-only restriction is replaced by its narrowly scoped shared-browser auth-storage contract.
+- **AND** The flow SHALL display loading, invalid-credential, duplicate-username, invalid-registration-gate, registration-closed, network-failure, retry, and signed-out states without exposing credential values.
 
 #### Scenario: Failed sign-in
 - **WHEN** credentials are invalid
@@ -27,7 +36,16 @@ The application SHALL replace and remove the foundation's temporary sign-in prob
 - **THEN** owned authentication storage and private rendered state are cleared, sign-out propagates to other tabs, and the signed-out experience is displayed
 
 ### Requirement: Setup-Gated First-Parent Registration
-The deployment SHALL accept public first-parent registration only when a Cognito pre-signup trigger hashes the submitted reusable registration gate password and validates it against the configured `REGISTRATION_GATE_PASSWORD_HASH` environment value. A successful signup SHALL create an unconfirmed Cognito identity with no household Membership; email confirmation SHALL activate it for authentication. The gate password SHALL NOT join an existing household and SHALL NOT be logged or stored as user data. Every later account for an existing household SHALL be created by a parent from family management rather than public registration. A missing or empty configured hash SHALL close public registration.
+
+The deployment SHALL accept public first-parent registration only when a Cognito pre-signup trigger hashes the submitted reusable registration gate password and validates it against the configured `REGISTRATION_GATE_PASSWORD_HASH` environment value.
+
+#### Scenario: Registration confirmation and household separation
+
+- **WHEN** public registration is configured or processed, or an account is added to an existing household
+- **THEN** A successful signup SHALL create an unconfirmed Cognito identity with no household Membership; email confirmation SHALL activate it for authentication.
+- **AND** The gate password SHALL NOT join an existing household and SHALL NOT be logged or stored as user data.
+- **AND** Every later account for an existing household SHALL be created by a parent from family management rather than public registration.
+- **AND** A missing or empty configured hash SHALL close public registration.
 
 #### Scenario: Valid first registration
 - **WHEN** a user submits the valid registration gate password with valid account details

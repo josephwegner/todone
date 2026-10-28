@@ -69,7 +69,7 @@
   </head>
   <body>
     <p class="note"><strong>Reference only</strong> — route/state design review; no account operation is wired to Todone.</p>
-    <label class="review-switcher">Preview route/state<select id="state-picker"><option value="directory">Family directory</option><option value="child">Add child</option><option value="parent">Add parent</option><option value="profile">My profile</option><option value="security">Security</option><option value="pending">Pending parent actions</option><option value="reset">Child password reset</option><option value="remove">Remove child</option><option value="failure">Partial failure</option></select></label>
+    <label class="review-switcher">Preview route/state<select id="state-picker"><option value="directory">Family directory</option><option value="child">Add child</option><option value="parent">Add parent</option><option value="profile">My profile</option><option value="security">Security</option><option value="pending">Pending parent actions</option><option value="activation">Activate parent: verify email</option><option value="reset">Child password reset</option><option value="remove">Remove child</option><option value="failure">Partial failure</option></select></label>
     <main class="shell">
       <header class="topbar"><span class="brand">Todone</span><span class="house">River House · Family</span></header>
       <div class="body">
@@ -79,7 +79,7 @@
           <button type="button" data-view="child">Add child</button>
           <button type="button" data-view="parent">Add parent</button>
           <button type="button" data-view="profile">My profile</button>
-          <button type="button" data-view="security">Security</button>
+          <button type="button" data-view="security">Security</button><button type="button" data-view="activation">Activate parent</button>
           <button type="button" data-view="remove">Remove child</button>
           <button type="button" data-view="failure">Partial failure</button>
         </nav>
@@ -100,10 +100,17 @@
           </article>
 
           <article class="hidden" data-panel="parent">
-            <p class="route">/family/parents/new · Back → /family</p><p class="eyebrow">New parent account</p><h1>Add a parent</h1><p class="subtle">They choose their own password from the welcome email’s one-time setup code.</p>
-            <form class="form"><label>Username<input value="morgan-vale" /></label><label>Display name<input value="Morgan Vale" /></label><label>Recovery email<input type="email" value="" placeholder="name@example.com" /></label><label>Profile color<select><option>Dusk</option><option>Pine</option><option>Lake</option></select></label><button class="button" type="button">Send welcome email</button></form><p class="back">Back returns to Family management. Email and setup code never appear in this URL.</p>
+            <p class="route">/family/parents/new · Back → /family</p><p class="eyebrow">New parent account</p><h1>Add a parent</h1><p class="subtle">Invite with username and email. They choose their own password, verify email, then choose their display name and color on first login.</p>
+            <form class="form"><label>Username<input value="morgan-vale" /></label><label>Recovery email<input type="email" value="" placeholder="name@example.com" /></label><button class="button" type="button">Send welcome email</button></form><p class="back">Back returns to Family management. Email and setup code never appear in this URL.</p>
           </article>
 
+          <article class="hidden" data-panel="activation">
+            <p class="route">/activate-parent · Back → /sign-in</p><p class="eyebrow">Parent account setup</p><h1>Verify your recovery email</h1>
+            <p class="subtle">First use your welcome email’s one-time setup code to choose a password. Then request a separate email-verification code. Household access stays closed until your current email is verified.</p>
+            <form class="form" onsubmit="return false"><label>Email-verification code<input autocomplete="one-time-code" inputmode="numeric" aria-describedby="verification-help" /></label><p class="help" id="verification-help">Enter the new email-verification code, not the welcome setup code. Codes are cleared when you leave.</p><div class="actions"><button class="button" type="button">Verify email and activate</button><button class="button button--secondary" type="button">Send verification code</button></div></form>
+            <p class="warning" role="status">If the intended email changes, verify the current address before activating. A competing action refreshes the pending state; password setup alone does not activate the account.</p>
+            <p class="error" role="alert">Invalid or expired code: request another code and try again. If an operation’s result cannot be confirmed, keep its request ID for operator help; do not repeat the mutation.</p>
+          </article>
           <article class="hidden" data-panel="pending">
             <p class="route">/family · Pending parent actions open from the member row</p><p class="eyebrow">Pending activation</p><h1>Morgan Vale</h1><p class="subtle">Parent · @morgan-vale · Dusk</p><div class="warning"><strong>Waiting for setup.</strong> Morgan must use the welcome email’s one-time setup code and choose their own password. An existing parent cannot activate this account.</div><div class="actions"><button class="button" type="button">Resend welcome email</button><button class="button button--secondary" type="button">Change email and resend</button><button class="button button--danger" type="button">Cancel pending account</button></div><p class="back">Canceling a focused action returns to the pending row with no account change.</p>
           </article>

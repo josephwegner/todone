@@ -1,7 +1,15 @@
 ## ADDED Requirements
 
 ### Requirement: Daily Recurrence Template
-A parent SHALL be able to create, edit, and remove a daily recurrence template with Todo title, optional label, one active household assignee, and a daily cadence. The template SHALL generate ordinary Todo records carrying template ID and round key metadata. Creation SHALL begin generation at the next household-local day boundary, not during the already-started day. Editing or removing a template SHALL affect only future generation; removal SHALL retire the template, prevent future Todos, and preserve all already-generated current and historical Todos.
+
+A parent SHALL be able to create, edit, and remove a daily recurrence template with Todo title, optional label, one active household assignee, and a daily cadence.
+
+#### Scenario: Template generation and revision boundaries
+
+- **WHEN** a daily template is created, revised, removed, or used to generate a round
+- **THEN** The template SHALL generate ordinary Todo records carrying template ID and round key metadata.
+- **AND** Creation SHALL begin generation at the next household-local day boundary, not during the already-started day.
+- **AND** Editing or removing a template SHALL affect only future generation; removal SHALL retire the template, prevent future Todos, and preserve all already-generated current and historical Todos.
 
 #### Scenario: Parent creates daily template
 - **WHEN** a parent creates a valid daily template for a child
@@ -34,7 +42,17 @@ A parent SHALL be able to invoke the ordinary Archive action on a rollover-bound
 - **THEN** the request is rejected and the Todo remains skipped
 
 ### Requirement: Generated Todo Lifecycle
-An active generated Todo SHALL support the same parent title, due-date, assignee, label, completion, and confirmed product-deletion rules as an active one-off Todo. Completed generated Todos SHALL follow the same completed immutability rules as one-off Todos. Historical `MISSED` and `SKIPPED` generated Todos SHALL reject metadata edits. Deleting one generated Todo SHALL NOT change its template or any other round. Editing the due date to any valid date SHALL detach that Todo from automatic round-end rollover while preserving template and round metadata. Undoing or reopening any completed generated Todo SHALL also detach it from rollover and return it to the default active list until completed, skipped, or deleted.
+
+An active generated Todo SHALL support the same parent title, due-date, assignee, label, completion, and confirmed product-deletion rules as an active one-off Todo.
+
+#### Scenario: Generated record lifecycle constraints
+
+- **WHEN** a generated Todo is completed, edited, deleted, undone, reopened, or retained in history
+- **THEN** Completed generated Todos SHALL follow the same completed immutability rules as one-off Todos.
+- **AND** Historical `MISSED` and `SKIPPED` generated Todos SHALL reject metadata edits.
+- **AND** Deleting one generated Todo SHALL NOT change its template or any other round.
+- **AND** Editing the due date to any valid date SHALL detach that Todo from automatic round-end rollover while preserving template and round metadata.
+- **AND** Undoing or reopening any completed generated Todo SHALL also detach it from rollover and return it to the default active list until completed, skipped, or deleted.
 
 #### Scenario: Parent edits current generated Todo
 - **WHEN** a parent edits an active generated Todo
@@ -81,7 +99,15 @@ Every template and generated-Todo operation SHALL verify active household member
 - **THEN** the request is denied without disclosing the template or its generated Todos
 
 ### Requirement: Accessible Routine Views
-Routine and history views SHALL identify the recurrence title, date, state, and assignee using visible text and accessible labels. Member history SHALL keep ordinary chronological ordering and present each `MISSED` generated Todo with explicit status text and a restrained red warning indicator that is not the sole status signal. The application SHALL NOT add a separate trends page, aggregation, chart, date presets, special missed-first sort, or missed-only filter. Views SHALL provide loading, empty, generation-failure, retry, and reduced-motion feedback states.
+
+Routine and history views SHALL identify the recurrence title, date, state, and assignee using visible text and accessible labels.
+
+#### Scenario: Routine history presentation and feedback
+
+- **WHEN** routine or history views display records or operation feedback
+- **THEN** Member history SHALL keep ordinary chronological ordering and present each `MISSED` generated Todo with explicit status text and a restrained red warning indicator that is not the sole status signal.
+- **AND** The application SHALL NOT add a separate trends page, aggregation, chart, date presets, special missed-first sort, or missed-only filter.
+- **AND** Views SHALL provide loading, empty, generation-failure, retry, and reduced-motion feedback states.
 
 #### Scenario: Generation failure
 - **WHEN** current occurrences cannot be generated

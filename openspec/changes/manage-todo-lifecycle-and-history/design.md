@@ -50,3 +50,12 @@ stateDiagram-v2
 - Extend existing Todo records with a default `ACTIVE` or `COMPLETE` lifecycle status, version, optional `preArchiveStatus`, and audit-snapshot path.
 - Deploy read compatibility first, then lifecycle write routes and UI.
 - Roll back by disabling new routes/UI; restoration of a product-deleted record requires an explicit operator process from its restricted audit snapshot and is not a user feature.
+
+## Child-removal extension contract
+
+Register every child-associated record/history/audit type introduced here in
+`lambdas/households/childRemoval.ts` (`childRemovalSteps`) and add deletion and partial-failure
+coverage before this capability is complete. Keep profile/lifecycle writes conditional on active
+Membership so late writers cannot recreate purged data. The approved hash-only revocation marker
+blocks stale-token bootstrap after lookup deletion and expires after confirmed Cognito deletion
+plus configured token lifetime/tolerance; never retain raw removed-child identity or snapshots.

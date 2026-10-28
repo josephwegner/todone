@@ -248,13 +248,29 @@ test('the parent family directory has no detectable WCAG A/AA violations', async
 
 for (const code of ['MEMBERSHIP_PENDING_ACTIVATION', 'MEMBERSHIP_INACTIVE']) {
   test(`session caller outcome ${code} has accessible recovery`, async ({ page }) => {
+    await page.route('**/api/v1/parent-activations', (route) =>
+      route.fulfill({
+        status: 403,
+        json: { error: { code: 'EMAIL_VERIFICATION_REQUIRED' } },
+      }),
+    );
     await page.goto('/sign-in');
     await signInAsChild(page, code);
-    await expect(
-      page.getByRole('heading', { name: 'We couldn’t open your session' }),
-    ).toBeFocused();
+    if (code === 'MEMBERSHIP_PENDING_ACTIVATION') {
+      await expect(page).toHaveURL(/\/activate-parent$/);
+      await expect(
+        page.getByRole('heading', { name: 'Verify your recovery email', exact: true }),
+      ).toBeFocused();
+      await expect(
+        page.getByRole('button', { name: 'Send verification code', exact: true }),
+      ).toBeEnabled();
+    } else {
+      await expect(
+        page.getByRole('heading', { name: 'We couldn’t open your session' }),
+      ).toBeFocused();
+      await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeEnabled();
+    }
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-    await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeEnabled();
     const signOut = page.getByRole('button', { name: 'Sign out', exact: true });
     await signOut.focus();
     await page.keyboard.press('Enter');

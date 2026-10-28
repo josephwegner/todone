@@ -43,10 +43,8 @@ flowchart TD
 
 1. A parent opens Family Management and sees active members with display name, username, immutable role, profile color, and only permitted actions. Recovery emails are absent.
 2. To add a child, the parent chooses a globally unique username, display name, color, and password. Delivery is suppressed; the child can sign in immediately after complete provisioning.
-3. To add a parent, the existing parent supplies username, display name, color, and email. The new parent verifies email and chooses their own password before Membership becomes active.
-   After Cognito completes the setup-code challenge, the activation API uses only the new parent's
-   verified identity to activate the matching pending Membership; an existing parent cannot do it
-   for them.
+3. To add a parent, the existing parent supplies only username and email. The new parent chooses a password, verifies email, then selects their own display name and color through required first-login profile setup before family management.
+   After the setup-code/password challenge, the new parent requests and enters a separate email-verification code on `/activate-parent`. Renewed signed proof must match the current intended address before the self-only API activates both Membership copies. A changed destination requires proof for that address; password success alone never grants household access.
 4. Any member can edit only their own display name and profile color.
 5. A parent may reset a child password after explicit target identification. The password is never persisted or repeated.
 
@@ -125,3 +123,14 @@ These journeys exercise the real local application after the visual-foundation i
 2. **Onboarding parent:** Use a first-parent account with no Membership, complete household setup, then profile setup. Verify validation/error copy remains associated with its fields; selecting a profile color shows the named swatch plus label; successful profile save reaches `/family` with the profile tone applied to the app shell and no changed security or onboarding behavior.
 3. **Active parent:** Sign in as an active parent with a Profile and go to `/family`. Verify the application navigation offers Family and My profile, does not offer unavailable Todo creation/history actions, retains logical reading order at compact and wide widths, and profile editing preserves focus/validation behavior.
 4. **Active child:** Sign in as an active child with a Profile and verify `/todos` is the landing route. Confirm application navigation offers My Todos and My profile, the work-in-progress surface is profile-toned but contains no fabricated Todo, no completion/create action, and no Todo API request. Toggle reduced motion in browser settings and verify the same route, text, focus, and reading order remain without non-essential movement.
+
+## Activation recovery states
+
+Keep setup code and email-verification code as separately labelled steps on `/activate-parent`.
+Show send/resend, submitting, invalid/expired-code, verification-pending, success, conflict refresh,
+and uncertain-operation states with labelled controls and accessible announcements. A safe
+conflict refreshes authorized state before another explicit submission; an uncertain request-ID
+failure does not imply safe replay. Clear passwords/codes/contact input on navigation and account
+changes. Reload recovers the pending signed-in identity without recovering secret form values;
+verification resumes rather than household creation. Pending administrative actions cannot change
+or cancel an account that has become active. Existing parents never see its recovery email.

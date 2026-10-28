@@ -26,7 +26,10 @@ function event(method: 'GET' | 'POST', sub = 'sub-one', body?: unknown, key = 'r
       requestId: 'safe-request-id',
       http: { method, path: '/', protocol: 'HTTP/1.1', sourceIp: '127.0.0.1', userAgent: 'test' },
       authorizer: {
-        jwt: { claims: { sub, 'cognito:username': 'parent', iat: '1800000000' }, scopes: [] },
+        jwt: {
+          claims: { token_use: 'id', sub, 'cognito:username': 'parent', iat: '1800000000' },
+          scopes: [],
+        },
       },
     },
     isBase64Encoded: false,

@@ -1,4 +1,6 @@
 import { createRouter, createWebHistory, type RouterHistory } from 'vue-router';
+import RecoveryEmailPage from '../components/RecoveryEmailPage.vue';
+import ParentAccountPage from '../components/ParentAccountPage.vue';
 import ProductionBootstrap from '../components/ProductionBootstrap.vue';
 import TodoPlaceholder from '../components/TodoPlaceholder.vue';
 import { messages } from '../i18n/messages';
@@ -21,6 +23,10 @@ export function sessionRouteDestination(
     if (isPublicRouteName(routeName)) return true;
     return AppRouteName.signIn;
   }
+  if (state.kind === 'recoverable-error' && state.failure === 'pending-activation') {
+    if (routeName === AppRouteName.activateParent) return true;
+    return AppRouteName.activateParent;
+  }
   if (state.kind !== 'ready') return true;
   const context = state.context;
   if (context.kind === 'unattached') {
@@ -40,6 +46,8 @@ export function sessionRouteDestination(
     (context.membership.role === 'child' &&
       (routeName === AppRouteName.family ||
         routeName === AppRouteName.newChild ||
+        routeName === AppRouteName.newParent ||
+        routeName === AppRouteName.security ||
         routeName === AppRouteName.resetChildPassword))
   )
     return home;
@@ -56,7 +64,14 @@ export function createAppRouter(
       ...Object.values(appRouteDefinitions).map((route) => ({
         path: route.path,
         name: route.name,
-        component: route.todoPlaceholder ? TodoPlaceholder : ProductionBootstrap,
+        component:
+          route.name === AppRouteName.security
+            ? RecoveryEmailPage
+            : route.name === AppRouteName.activateParent || route.name === AppRouteName.newParent
+              ? ParentAccountPage
+              : route.todoPlaceholder
+                ? TodoPlaceholder
+                : ProductionBootstrap,
       })),
       { path: '/:pathMatch(.*)*', redirect: { name: AppRouteName.root } },
     ],
@@ -64,7 +79,8 @@ export function createAppRouter(
   router.beforeEach(async (to) => {
     if (session.state.value.kind !== 'uninitialized' && session.state.value.kind !== 'initializing')
       await session.reconcileBrowserAccount();
-    await session.initialize();
+    if (session.state.value.kind === 'uninitialized' || session.state.value.kind === 'initializing')
+      await session.initialize();
     const destination = sessionRouteDestination(to.name as RouteName, session.state.value);
     if (destination === true) return true;
     return { name: destination, replace: true };

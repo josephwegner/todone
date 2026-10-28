@@ -371,6 +371,19 @@ body {
     font-weight: 700;
     line-height: 1.35;
   }
+  .family-member__actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    flex: 1 0 calc(100% - 1.75rem);
+    margin-left: 1.75rem;
+  }
+  .family-member__actions .link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+  }
   .family-member__action {
     flex: 1 0 calc(100% - 1.75rem);
     margin: -0.15rem 0 0 1.75rem;
@@ -391,6 +404,10 @@ body {
     .family-member {
       flex-wrap: nowrap;
       padding: 1rem 1.25rem;
+    }
+    .family-member__actions {
+      flex: 0 0 auto;
+      margin: 0;
     }
     .family-member__action {
       flex: 0 0 auto;

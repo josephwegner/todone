@@ -86,7 +86,15 @@ vi.mock('@aws-sdk/client-cognito-identity-provider', () => {
   class SignUpCommand {
     constructor(public input: unknown) {}
   }
-  return { CognitoIdentityProviderClient, InitiateAuthCommand, SignUpCommand };
+  class RespondToAuthChallengeCommand {
+    constructor(public input: unknown) {}
+  }
+  return {
+    CognitoIdentityProviderClient,
+    InitiateAuthCommand,
+    RespondToAuthChallengeCommand,
+    SignUpCommand,
+  };
 });
 
 const { AuthClient, AuthSessionUnavailableError } = await import('../../services/authClient');

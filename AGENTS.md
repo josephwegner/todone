@@ -55,6 +55,12 @@
 
 - Add concise function-level comments where Cognito, API Gateway, Lambda triggers, or another external service supplies an event and expects a particular response or ordering contract.
 
+## Credential-free development
+
+- Keep AWS credentials, authenticated Terraform state, and sensitive release inputs outside agent-accessible workspaces. Do not request AWS credentials for application implementation or local verification.
+- Agents build and test against explicit configuration, local emulators, and service-boundary contracts. `family-paas` owns account-specific infrastructure and release wiring; the human operator runs authenticated plans, publication, apply, and live checks on their own computer.
+- Share only allowlisted non-secret configuration and sanitized release evidence. A local/mock validation is never evidence of a successful production-state plan or deployment.
+
 ## Approved local command families
 
 - The project owner authorizes Codex to run every current `npm run test*`, `npm run dev*`, and `npm run build*` script, `npm run verify-local`, and every `npx playwright` command without asking again.

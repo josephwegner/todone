@@ -57,3 +57,12 @@ stateDiagram-v2
 - Introduce templates and generated-Todo metadata without changing one-off Todo behavior.
 - Release daily creation and query behavior before enabling the schedule.
 - Roll back the schedule safely; existing generated Todos remain ordinary current or historical Todo records.
+
+## Child-removal extension contract
+
+Register every child-associated record/history/audit type introduced here in
+`lambdas/households/childRemoval.ts` (`childRemovalSteps`) and add deletion and partial-failure
+coverage before this capability is complete. Keep profile/lifecycle writes conditional on active
+Membership so late writers cannot recreate purged data. The approved hash-only revocation marker
+blocks stale-token bootstrap after lookup deletion and expires after confirmed Cognito deletion
+plus configured token lifetime/tolerance; never retain raw removed-child identity or snapshots.

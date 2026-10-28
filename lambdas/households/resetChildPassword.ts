@@ -104,8 +104,8 @@ export async function handler(
 
     try {
       const administration = dependencies.administration ?? getCognitoAdministration();
-      await administration.setPermanentPassword(target.username, password);
-      await administration.globalSignOut(target.username);
+      await administration.setPermanentPassword(target.sub, password);
+      await administration.globalSignOut(target.sub);
       await repository.advanceCredentialsValidAfter(
         target.sub,
         (dependencies.now ?? (() => new Date()))().toISOString(),

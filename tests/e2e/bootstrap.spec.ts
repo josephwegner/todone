@@ -395,7 +395,7 @@ test('restores the shared browser account after reload and clears owned credenti
   ).toEqual([]);
 });
 
-test('renders a readable active and pending family directory without invented actions', async ({
+test('renders the family directory with only implemented authorized actions', async ({
   page,
 }, testInfo) => {
   await mockProfileAndDirectory(page, existingProfile, [
@@ -437,7 +437,11 @@ test('renders a readable active and pending family directory without invented ac
   await expect(directory.getByText('Parent', { exact: true })).toHaveCount(2);
   await expect(directory).toContainText('Morgan Vale');
   await expect(directory).toContainText('Pending activation');
-  await expect(directory.getByRole('button')).toHaveCount(0);
+  await expect(
+    directory.getByRole('button', { name: 'Remove child account', exact: true }),
+  ).toHaveCount(1);
+  for (const name of ['Resend welcome email', 'Change email and resend', 'Cancel pending account'])
+    await expect(directory.getByRole('button', { name, exact: true })).toHaveCount(1);
   await captureFoundationSurface(page, testInfo, 'family-long-content');
 });
 
@@ -729,10 +733,17 @@ for (const [code, guidance] of [
     await page.getByLabel('Username').fill('SyntheticCaller');
     await page.getByLabel('Password').fill('StrongPassword123!');
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await expect(
-      page.getByRole('heading', { name: 'We couldn’t open your session' }),
-    ).toBeFocused();
-    await expect(page.getByText(guidance, { exact: false })).toBeVisible();
+    if (code === 'MEMBERSHIP_PENDING_ACTIVATION') {
+      await expect(page).toHaveURL(/\/activate-parent$/);
+      await expect(
+        page.getByRole('heading', { name: 'Verify your recovery email', exact: true }),
+      ).toBeFocused();
+    } else {
+      await expect(
+        page.getByRole('heading', { name: 'We couldn’t open your session' }),
+      ).toBeFocused();
+      await expect(page.getByText(guidance, { exact: false })).toBeVisible();
+    }
     await expect(page.getByRole('navigation', { name: 'Application' })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Create your household' })).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath(`${code}.png`), fullPage: true });

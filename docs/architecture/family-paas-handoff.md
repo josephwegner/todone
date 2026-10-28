@@ -4,7 +4,10 @@
 
 This is the requirements contract for a separate agent working in the `family-paas` repository. That repository owns its Terraform/module layout, resource decomposition, naming implementation, CI integration, and migration mechanics. This handoff specifies Todone's required inputs, behavior, outputs, and verification without prescribing internal `family-paas` design.
 
-The separate agent MUST return a reviewed plan and evidence to the Todone operator. It MUST NOT deploy or alter production resources without explicit human authorization.
+The separate agent prepares the infrastructure contract, source and credential-free checks. The
+human platform owner runs the authenticated state-backed plan on their own computer and keeps
+credentials/state private. Agents need not receive the raw plan; sanitized review evidence can be
+returned. No agent may deploy or alter production resources without explicit human authorization.
 
 ## Preconditions and discovery
 
@@ -134,7 +137,7 @@ No output may contain credentials, client secrets, token values, setup secrets, 
 
 ## Verification contract
 
-The `family-paas` agent must report the repository's exact commands rather than assuming directory or wrapper names from this document. Evidence must include:
+The `family-paas` agent must report the repository's exact commands rather than assuming directory or wrapper names from this document. The human platform owner executes authenticated checks locally and owns the release evidence. Agents use credential-free source, validation and policy-test evidence; do not grant them AWS access to obtain the following release evidence:
 
 - Repository format and validation commands passing.
 - Relevant infrastructure unit/policy tests passing.
@@ -163,3 +166,14 @@ This handoff does not require or prescribe:
 - Offline mutation synchronization.
 - Product analytics, email notifications, or paid monitoring.
 - Household, Membership, Todo, label, or recurrence business logic inside `family-paas`.
+
+## Credential boundary
+
+The owner confirmed on 2026-10-28 that AWS credentials remain on the operator's computer.
+Application build/test workflows must work without Terraform state or an AWS account.
+`family-paas` supplies non-secret runtime bindings and artifact/deployment targets; the operator
+performs real plans, applies, publication and live-provider checks. Do not move credentials into
+an agent workspace, copy raw outputs/state, or treat mocked plans as real release evidence.
+See [the application/platform handoff](../operations/family-account-plan-review.md) for current
+build commands, public configuration, existing helper limitations and the approved development
+completion boundary. Migrating existing resource/state ownership requires separate planning.

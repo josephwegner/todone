@@ -31,6 +31,7 @@ describe('createCognitoVerifier', () => {
 
   it('maps a verified payload to sub, username, and exp', async () => {
     verifyMock.mockResolvedValue({
+      token_use: 'id',
       sub: 'sub-123',
       'cognito:username': 'parent1',
       exp: 1_700_000_000,
@@ -43,7 +44,7 @@ describe('createCognitoVerifier', () => {
   });
 
   it('rejects a verified payload with no username claim rather than returning an empty username', async () => {
-    verifyMock.mockResolvedValue({ sub: 'sub-123', exp: 1_700_000_000 });
+    verifyMock.mockResolvedValue({ token_use: 'id', sub: 'sub-123', exp: 1_700_000_000 });
 
     const verifier = createCognitoVerifier({ userPoolId: 'pool-id', clientId: 'client-id' });
 
@@ -60,6 +61,7 @@ describe('createCognitoVerifier', () => {
 
   it('LOCAL DEVELOPMENT ONLY: uses a generic JwtVerifier against the cognito-local issuer/JWKS when localEndpoint is set', async () => {
     localVerifyMock.mockResolvedValue({
+      token_use: 'id',
       sub: 'sub-456',
       'cognito:username': 'localdev',
       exp: 1_800_000_000,
@@ -91,6 +93,7 @@ describe('createCognitoVerifier', () => {
 
   it('LOCAL DEVELOPMENT ONLY: only fetches the JWKS once across multiple verify calls', async () => {
     localVerifyMock.mockResolvedValue({
+      token_use: 'id',
       sub: 'sub-456',
       'cognito:username': 'localdev',
       exp: 1_800_000_000,
@@ -110,6 +113,7 @@ describe('createCognitoVerifier', () => {
 
   it('does not use the local verifier when localEndpoint is absent', async () => {
     verifyMock.mockResolvedValue({
+      token_use: 'id',
       sub: 'sub-123',
       'cognito:username': 'parent1',
       exp: 1_700_000_000,

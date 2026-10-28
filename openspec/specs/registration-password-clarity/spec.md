@@ -1,7 +1,7 @@
 # registration-password-clarity Specification
 
 ## Purpose
-TBD - created by archiving change clarify-registration-password-requirements. Update Purpose after archive.
+Distinguish the deployment Entry Code from account passwords and provide consistent, accessible account-password guidance across registration, recovery, and family-account flows.
 ## Requirements
 ### Requirement: Distinct Entry Code and Account Password
 
@@ -14,7 +14,13 @@ First-parent registration SHALL label the reusable deployment registration gate 
 
 ### Requirement: Shared Account-Password Guidance
 
-Every flow that selects a new Cognito account password SHALL state before submission that the password requires at least 8 characters with uppercase, lowercase, number, and symbol. First-parent registration and Forgot Password SHALL implement the shared guidance in this change; later child and additional-parent password flows SHALL reuse the same contract. When Cognito rejects a password, the UI SHALL associate actionable policy guidance with the password field without exposing the submitted password.
+Every flow that selects a new Cognito account password SHALL state before submission that the password requires at least 8 characters with uppercase, lowercase, number, and symbol.
+
+#### Scenario: Shared password flow and rejection guidance
+
+- **WHEN** registration, recovery, child provisioning, or additional-parent setup selects or rejects a password
+- **THEN** First-parent registration and Forgot Password SHALL implement the shared guidance in this change; later child and additional-parent password flows SHALL reuse the same contract.
+- **AND** When Cognito rejects a password, the UI SHALL associate actionable policy guidance with the password field without exposing the submitted password.
 
 #### Scenario: Registration password fails policy
 

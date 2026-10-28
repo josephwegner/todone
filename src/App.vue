@@ -1,10 +1,20 @@
 <script setup lang="ts">
 import { ListTodo, Trees, UserRound, UsersRound } from '@lucide/vue';
 import { computed } from 'vue';
-import { RouterLink, RouterView } from 'vue-router';
+import { RouterLink, RouterView, useRoute } from 'vue-router';
 import { activeMembershipRole } from './presentation/appContext';
+import { messages } from './i18n/messages';
 import { AppRouteName } from './router/routes';
 
+const route = useRoute();
+const inFamilySection = computed(() =>
+  [
+    AppRouteName.family,
+    AppRouteName.newChild,
+    AppRouteName.resetChildPassword,
+    AppRouteName.newParent,
+  ].some((name) => name === route?.name),
+);
 const hasApplicationNavigation = computed(() => activeMembershipRole.value !== null);
 </script>
 
@@ -35,6 +45,8 @@ const hasApplicationNavigation = computed(() => activeMembershipRole.value !== n
           v-if="activeMembershipRole === 'parent'"
           :to="{ name: AppRouteName.family }"
           class="app-navigation-link"
+          :class="{ 'router-link-exact-active': inFamilySection }"
+          :aria-current="inFamilySection ? 'page' : undefined"
         >
           <UsersRound :size="18" aria-hidden="true" />
           Family
@@ -43,6 +55,12 @@ const hasApplicationNavigation = computed(() => activeMembershipRole.value !== n
           <UserRound :size="18" aria-hidden="true" />
           My profile
         </RouterLink>
+        <RouterLink
+          v-if="activeMembershipRole === 'parent'"
+          :to="{ name: AppRouteName.security }"
+          class="app-navigation-link"
+          >{{ messages.navigation.securityTitle }}</RouterLink
+        >
       </nav>
     </div>
   </header>

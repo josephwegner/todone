@@ -111,3 +111,40 @@ Forbidden fields: authorization headers, JWTs or claims beyond an ephemeral in-p
 The implementing engineer owns threat-linked tests and safe defaults. The reviewer owns authorization-matrix and data-flow review. The `family-paas` owner owns infrastructure IAM, public exposure, outputs, and plan evidence. The human release owner owns production authorization and smoke evidence. The operator owns setup-secret rotation, identity repair, restore drills, and incident response.
 
 Review this model for every new entity, endpoint, dependency, token storage change, public route, Cognito permission, service-worker strategy, log field, deployment path, or child-removal cascade extension. A discovered cross-household access, secret exposure, authorization bypass, or unrecoverable destructive plan blocks release.
+
+## Activation email substitution and competing administrative actions
+
+A completed setup-password challenge does not prove a mutable current recovery address. Use
+Cognito's native email-attribute verification and renewed signed ID-token claims, matched to the
+private current-email binding. Never call username-only administrative email verification. Keep
+raw contacts/codes out of application data, logs, URLs, and peer responses; salted binding digests
+are private derived contact data and are removed on activation/cancellation.
+
+Activation, resend, email replacement, and cancellation share a cross-instance conditional guard.
+After activation commits, a delayed pending action must fail before Cognito. Staged updates retaining
+an old verified email must fail binding checks. Never allow lease expiry to admit a second writer
+while Cognito may still complete the first request. Partial outcomes retain ownership; operator
+repair must quiesce in-flight work before clearing the exact owner. Legacy missing bindings and
+unsupported local verification fail closed. Deterministic interleaving tests cover both action
+orders, in-flight password/verification calls, stale claims, delayed external responses, missing
+metadata, and safe error/telemetry projection. Real provider mail/code semantics require release
+owner evidence when local parity is unavailable.
+
+## Deleted-identity token boundary
+
+The approved deletion-retention exception is a temporary `REVOKED#SHA-256(sub)/REVOCATION`
+record containing no raw identity, member ID, username, name, email, or history. Child removal
+publishes it atomically with inactive Membership copies before cleanup can remove the lookup.
+Membership resolution and household bootstrap check it before treating an identity as unattached.
+An incomplete removal retains non-expiring ownership for operator repair. After confirmed Cognito
+deletion, remove ownership and set numeric `expiresAt` to deletion time plus the configured
+one-hour ID-token lifetime and 60-second tolerance. Pending-parent cancellation uses the same
+bound. No raw child identity survives successful removal; completed replay references associated
+with that child are purged. The marker logically expires independently of eventual DynamoDB TTL
+cleanup. A reused username has a new unrelated `sub` and cannot recover old identity access.
+
+Verify stale-token bootstrap during/after deletion, partial cleanup, completed replay, reference
+purge, token-bound marker expiry, and username reuse. Terraform vendors the pinned table module
+with only TTL added, preserving the existing table resource address, keys, PITR, encryption, and
+deletion protection. Reject any replacement plan; no apply/deploy is authorized. Rollback must
+retain revocation-aware Membership/bootstrap checks until all relevant old JWTs have expired.

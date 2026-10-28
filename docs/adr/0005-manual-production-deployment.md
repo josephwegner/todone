@@ -13,6 +13,12 @@ Use local simulation and automated CI as pre-production verification. Deploy to 
 
 A human release owner explicitly authorizes and performs infrastructure apply, application publication, production user setup, live smoke testing, rollback, and restore. Agents may prepare commands, plans, and evidence but MUST NOT execute production-changing actions without explicit authorization.
 
+Application development completion is separate from release approval. Local build/test and
+artifact preparation require no AWS credentials or Terraform state. Credentials and authenticated
+state remain on the human operator's computer; `family-paas` owns account-specific resource
+wiring. The operator supplies the real plan and release checks before deployment. Completing
+application work never substitutes local/mock evidence for those checks.
+
 Retain identifiable prior frontend and Lambda artifacts. Record the deployed artifact IDs, reviewed Terraform plan, smoke result, and rollback target for each release.
 
 ## Consequences

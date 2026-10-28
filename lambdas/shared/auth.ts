@@ -5,6 +5,8 @@ export interface AuthenticatedIdentity {
   sub: string;
   username: string;
   issuedAt?: number;
+  email?: string;
+  emailVerified?: boolean;
 }
 
 let cachedVerifier: TokenVerifier | null = null;
@@ -32,7 +34,13 @@ export async function authenticateRequest(
   try {
     const verifier = verifierOverride ?? getVerifier();
     const claims = await verifier.verify(token);
-    return { sub: claims.sub, username: claims.username, issuedAt: claims.iat };
+    return {
+      sub: claims.sub,
+      username: claims.username,
+      issuedAt: claims.iat,
+      email: claims.email,
+      emailVerified: claims.emailVerified,
+    };
   } catch {
     return null;
   }
@@ -46,12 +54,21 @@ function gatewayAuthorizerIdentity(
   if (!isRecord(context.authorizer) || !isRecord(context.authorizer.jwt))
     return { kind: 'invalid' };
   const claims = context.authorizer.jwt.claims;
-  if (!isRecord(claims)) return { kind: 'invalid' };
+  if (!isRecord(claims) || claims.token_use !== 'id') return { kind: 'invalid' };
   const sub = claims[CognitoClaim.subject];
   const username = claims[CognitoClaim.username] ?? claims.username;
   const issuedAt = epochSeconds(claims.iat);
   return typeof sub === 'string' && typeof username === 'string'
-    ? { kind: 'valid', identity: { sub, username, issuedAt } }
+    ? {
+        kind: 'valid',
+        identity: {
+          sub,
+          username,
+          issuedAt,
+          ...(typeof claims.email === 'string' ? { email: claims.email } : {}),
+          emailVerified: claims.email_verified === true || claims.email_verified === 'true',
+        },
+      }
     : { kind: 'invalid' };
 }
 

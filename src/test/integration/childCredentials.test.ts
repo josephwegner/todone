@@ -69,9 +69,10 @@ async function fixture() {
     async globalSignOut() {
       calls.push('signout');
     },
+    canResendWelcome: vi.fn().mockResolvedValue(true),
     resendWelcome: vi.fn(),
     updatePendingParentEmail: vi.fn(),
-    markEmailVerified: vi.fn(),
+    stageRecoveryEmail: vi.fn(),
     deleteUser: vi.fn(),
   };
   const app = express();

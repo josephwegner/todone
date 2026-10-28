@@ -5,6 +5,8 @@ export interface SessionClaims {
   username: string;
   /** Issued-at time as seconds since epoch, matching the JWT `iat` claim. */
   iat?: number;
+  email?: string;
+  emailVerified?: boolean;
   /** Expiration as seconds since epoch, matching the JWT `exp` claim. */
   exp: number;
 }
@@ -25,7 +27,9 @@ interface CognitoVerifierConfig {
   localEndpoint?: string;
 }
 
+const INVALID_ID_TOKEN_KIND = 'Verified token is not an ID token.';
 function toSessionClaims(payload: Record<string, unknown>): SessionClaims {
+  if (payload.token_use !== 'id') throw new Error(INVALID_ID_TOKEN_KIND);
   const { sub, exp, iat } = payload;
   const username = payload['cognito:username'] ?? payload['username'];
 
@@ -39,7 +43,14 @@ function toSessionClaims(payload: Record<string, unknown>): SessionClaims {
   if (iat !== undefined && typeof iat !== 'number') {
     throw new Error('Verified token has an invalid issued-at claim.');
   }
-  return { sub, username, ...(iat === undefined ? {} : { iat }), exp };
+  return {
+    sub,
+    username,
+    ...(iat === undefined ? {} : { iat }),
+    exp,
+    ...(typeof payload.email === 'string' ? { email: payload.email } : {}),
+    ...(payload.email_verified === true ? { emailVerified: true } : {}),
+  };
 }
 
 /**

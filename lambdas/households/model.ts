@@ -1,3 +1,5 @@
+import type { ChildRemovalRepository } from './childRemoval';
+import type { PendingParentRepository } from './pendingParents';
 import {
   MembershipResolutionKind,
   type PendingParentAction,
@@ -66,8 +68,8 @@ export interface FamilyDirectoryMember {
   username: string;
   role: MembershipRole;
   activationState: MembershipActivationState;
-  displayName: string;
-  color: ProfileColorId;
+  displayName?: string;
+  color?: ProfileColorId;
 }
 
 export type PendingParentActionValue =
@@ -125,6 +127,8 @@ export type BootstrapResult =
   | { kind: 'idempotency-conflict' };
 
 export interface HouseholdRepository {
+  readonly childRemoval: ChildRemovalRepository;
+  readonly pendingParents: PendingParentRepository;
   resolveMembership(sub: string, tokenIssuedAt?: number): Promise<MembershipResolution>;
   bootstrap(input: BootstrapInput): Promise<BootstrapResult>;
   getProfile(householdId: string, memberId: string): Promise<Profile | null>;

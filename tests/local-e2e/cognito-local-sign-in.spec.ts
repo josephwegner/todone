@@ -99,3 +99,39 @@ test('renews through the real emulator and shares the return visit and sign-out 
   await expect(peer.getByRole('heading', { name: 'Sign in', exact: true })).toBeFocused();
   await expect(peer.getByLabel('Display name')).toHaveCount(0);
 });
+
+test('creates and cancels a real pending parent, then completely removes a disposable child', async ({
+  page,
+}) => {
+  await signInLocalParent(page);
+  const suffix = Date.now().toString(36),
+    parentUsername = `parent-${suffix}`;
+  await page.getByRole('link', { name: 'Add a parent', exact: true }).click();
+  await page.getByLabel('Username', { exact: true }).fill(parentUsername);
+  await expect(page.getByLabel('Display name', { exact: true })).toHaveCount(0);
+  await page.getByLabel('Recovery email', { exact: true }).fill(`${parentUsername}@example.test`);
+  await expect(page.getByLabel('Profile color', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Send welcome email', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Family management', exact: true })).toBeVisible();
+  const pending = page.getByRole('listitem').filter({ hasText: `@${parentUsername}` });
+  await expect(pending).toContainText('Pending activation');
+  await expect(pending).not.toContainText('example.test');
+  await pending.getByRole('button', { name: 'Cancel pending account', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(pending).toBeVisible();
+  await pending.getByRole('button', { name: 'Cancel pending account', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
+  await expect(pending).toHaveCount(0);
+  const childUsername = `remove-${suffix}`;
+  await page.getByRole('link', { name: 'Create child account', exact: true }).click();
+  await page.getByLabel('Username', { exact: true }).fill(childUsername);
+  await page.getByLabel('Child display name', { exact: true }).fill('Disposable Local Child');
+  await page.getByLabel('Lake', { exact: true }).check();
+  await page.getByLabel('Child password', { exact: true }).fill(`DisposableChild${Date.now()}!`);
+  await page.getByRole('button', { name: 'Create child account', exact: true }).click();
+  const child = page.getByRole('listitem').filter({ hasText: `@${childUsername}` });
+  await expect(child).toBeVisible();
+  await child.getByRole('button', { name: 'Remove child account', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
+  await expect(child).toHaveCount(0);
+});

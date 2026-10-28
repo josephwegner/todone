@@ -19,13 +19,16 @@
     "test:unit:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:e2e": "playwright test tests/e2e",
+    "test:e2e:parent-activation": "playwright test --config=playwright.parent-activation.config.ts",
     "test:e2e:local-auth": "playwright test --config=playwright.local.config.ts",
     "test:a11y": "playwright test tests/a11y",
     "verify-local": "npm run format:check && npm run lint:check && npm run typecheck && npm run test:unit && npm run test:integration && npm run build && npm run build:lambdas && npx openspec validate --all --strict --no-interactive",
     "setup:local-cognito": "tsx scripts/setup-local-cognito.ts",
+    "db:reset:local": "tsx scripts/reset-local-database.ts",
     "build:lambdas": "tsx scripts/build-and-deploy-lambdas.ts --build-only",
     "deploy:lambdas": "tsx scripts/build-and-deploy-lambdas.ts",
-    "deploy:frontend": "tsx scripts/build-and-deploy-frontend.ts"
+    "deploy:frontend": "tsx scripts/build-and-deploy-frontend.ts",
+    "test:e2e:local-seed": "playwright test --config=playwright.local-seed.config.ts"
   },
   "keywords": [],
   "author": "",

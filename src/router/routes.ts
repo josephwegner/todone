@@ -96,7 +96,6 @@ export const appRouteDefinitions: Record<AppRouteName, AppRouteDefinition> = {
     title: messages.navigation.activateParentTitle,
     bootstrapScreen: 'signin',
     public: true,
-    unavailable: true,
   },
   [AppRouteName.todos]: {
     name: AppRouteName.todos,
@@ -134,7 +133,6 @@ export const appRouteDefinitions: Record<AppRouteName, AppRouteDefinition> = {
     path: '/security',
     title: messages.navigation.securityTitle,
     bootstrapScreen: null,
-    unavailable: true,
   },
   [AppRouteName.newChild]: {
     name: AppRouteName.newChild,
@@ -153,7 +151,6 @@ export const appRouteDefinitions: Record<AppRouteName, AppRouteDefinition> = {
     path: '/family/parents/new',
     title: messages.navigation.newParentTitle,
     bootstrapScreen: null,
-    unavailable: true,
   },
 };
 

@@ -90,3 +90,40 @@ Messages say what failed, whether a write was confirmed, and what the user can d
 ## Verification checklist
 
 For every new remote interaction, tests and review cover initial, loading, loaded, empty where applicable, submitting, disabled, success, validation, recoverable failure, retry, conflict where applicable, authorization loss, session expiry, keyboard focus, live-region behavior, reduced motion, and all three responsive ranges.
+
+## Pending parent email verification
+
+`/activate-parent` distinguishes password setup from email-attribute verification. Reserve a stable
+status/error region for code delivery, invalid/expired codes, resend, disabled submission,
+verification pending, stale destination, guard conflict, and uncertain request-ID outcomes.
+Password setup success retains pending status. Activation success requires confirmed server
+Membership. Guard conflicts refresh state before an explicit attempt; uncertain outcomes block
+ordinary mutation retry and provide operator guidance. Never announce/display another member's
+email or restore codes from history/storage. Preserve heading/error focus and clear secret inputs
+on submission, navigation, sign-out, and generation changes. Test keyboard and screen-reader
+behavior across compact/medium/wide, 320px reflow, zoom, and reduced motion.
+
+## Invited-parent first-login Profile
+
+Parent invitations accept username/email only and create no Profile. A pending or newly active
+parent without a Profile is represented by username and state, omitting displayName/color; the
+family directory remains available. Missing child Profiles still fail closed. After native email
+verification and activation, `/profile/setup` requires that parent to choose their own name/color
+through the existing self-only version-zero Profile API before family management. Cancellation
+handles absent and legacy-present Profiles without granting peers profile-write authority.
+
+## PR activation recovery correction
+
+Welcome resend and change-email-and-resend privately read provider invitation eligibility under
+the pending owner before mutation. Only enabled accounts awaiting password setup qualify.
+After password setup, return safe WELCOME_SETUP_UNAVAILABLE conflict feedback without changing
+email or retaining ownership; the invited parent finishes native verification themselves. A
+read-only failure releases ownership. Definitive pure-resend invalid-state/throttling releases
+ownership; unknown send outcomes and any email-update/resend split retain it for quiesced repair.
+The status read never authorizes activation and provider fields do not enter directory responses.
+
+Pending activation entry/restoration renews credentials and attempts the self endpoint without a
+code. EMAIL_VERIFICATION_REQUIRED alone returns to code entry. Successful native verification
+may consume a code before renewal/activation fails: explicit Retry activation renews and retries
+self activation without replaying the code. Conflict refreshes authorized state without tearing
+down the pending page or automatically looping mutations. Generation checks discard late results.
