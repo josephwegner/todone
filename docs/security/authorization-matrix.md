@@ -125,3 +125,17 @@ purge, token-bound marker expiry, and username reuse. Terraform vendors the pinn
 with only TTL added, preserving the existing table resource address, keys, PITR, encryption, and
 deletion protection. Reject any replacement plan; no apply/deploy is authorized. Rollback must
 retain revocation-aware Membership/bootstrap checks until all relevant old JWTs have expired.
+
+## Central capability decisions
+
+Every delivered operation and its eligibility, trusted scope, safe denial and side effects are
+listed in `openspec/changes/centralize-authorization-capabilities/inventory.md`. The typed registry
+is `shared/authorizationCapabilities.ts`; the central policy is `lambdas/authorization/policy.ts`.
+Active parent/child grants derive per request; pending/inactive/inconsistent/credential-stale
+principals receive no ordinary household authority. Unattached bootstrap and proven pending-self
+activation are narrow exceptions. Broad family-management and self-profile hints never authorize
+a target mutation. Target context requires resolved household/member identity, role and lifecycle;
+missing context denies. Repositories retain tenant keys and atomic state/version/ownership guards.
+Completed retries use explicit `request.completed.replay` decisions from caller-bound completed
+receipts without another side effect. Missing-target mutations still deny. Every registry key
+requires principal/context decision tables and endpoint security-negative coverage.

@@ -1,3 +1,4 @@
+import { Capability } from '../../../shared/authorizationCapabilities';
 import { describe, expect, it, vi } from 'vitest';
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 import {
@@ -73,12 +74,20 @@ describe('parent handlers', () => {
     expect(replayed.statusCode).toBe(200);
     expect(created.body).toBe(replayed.body);
     expect(JSON.parse(created.body!).member).toEqual({
+      allowedActions: [
+        Capability.pendingParentCancel,
+        Capability.pendingParentEmail,
+        Capability.pendingParentResend,
+      ],
       memberId: 'id-3',
       username: 'new-parent',
       role: 'parent',
       activationState: 'PENDING_ACTIVATION',
     });
-    expect(created.body).not.toMatch(/email|digest|salt|sub|displayName|color/);
+    expect(JSON.stringify(Object.keys(JSON.parse(created.body!).member))).not.toMatch(
+      /email|digest|salt|sub|displayName|color/,
+    );
+    expect(created.body).not.toContain(f.details.email);
     expect(await f.repository.getProfile('id-1', 'id-3')).toBeNull();
     expect(f.administration.createUser).toHaveBeenCalledTimes(1);
     expect(f.administration.setPermanentPassword).not.toHaveBeenCalled();

@@ -1,4 +1,16 @@
-# Next-agent handoff: family account management
+# Next-agent handoff: authorization capabilities
+
+The active `centralize-authorization-capabilities` change follows the archived family-account
+implementation below. Use [authorization-capabilities.md](authorization-capabilities.md) for the
+registry, principal/context rules, extension checklist, migrated endpoints and coordinated rollback.
+Completed retries use the owner-approved explicit receipt decision; new missing-target mutations
+still deny. Local implementation is complete: 21/21 tasks, with evidence in
+`openspec/changes/centralize-authorization-capabilities/verification.md`. Aggregate verification
+passed 597 unit and 46 integration tests plus builds and OpenSpec validation; browser/a11y and
+native-adapter checks are recorded separately there. No data or infrastructure migration or
+deployment is authorized.
+
+## Prior handoff: family account management
 
 Current status (2026-10-28): archived, implementation complete, 42/42 tasks, after owner-approved manual
 acceptance and separation of credential-free development from human release verification.

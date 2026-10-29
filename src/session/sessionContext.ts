@@ -20,7 +20,11 @@ export async function readSessionContext(
         membership.failure ?? (membership.recoverable ? 'context-unavailable' : 'session-ended'),
     };
   }
-  if (!membership.data.membership) return { kind: 'success', context: { kind: 'unattached' } };
+  if (!membership.data.membership)
+    return {
+      kind: 'success',
+      context: { kind: 'unattached', capabilities: membership.data.capabilities ?? [] },
+    };
   const profile = await fetchMyProfile(source, abortableFetch);
   if (profile.kind === 'error') {
     return {
@@ -31,7 +35,11 @@ export async function readSessionContext(
   if (!profile.data.profile)
     return {
       kind: 'success',
-      context: { kind: 'profile-required', membership: membership.data.membership },
+      context: {
+        kind: 'profile-required',
+        membership: membership.data.membership,
+        allowedActions: profile.data.allowedActions,
+      },
     };
   return {
     kind: 'success',

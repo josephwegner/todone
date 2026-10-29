@@ -1,3 +1,12 @@
+import { MembershipApiMessage } from '../../shared/membershipContract';
+import { Capability } from '../../shared/authorizationCapabilities';
+import {
+  enforceCapability,
+  completedReplayAllowed,
+  capabilityFailureResponse,
+} from '../authorization/enforcement';
+import { principalFromResolution } from '../authorization/policy';
+import { membershipRepresentation } from '../authorization/projections';
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda';
 import { authenticateRequest } from '../shared/auth';
 import { handleObservedRequest } from '../shared/request';
@@ -62,17 +71,39 @@ export async function handler(
         },
       ]);
     }
-    const result = await repository.bootstrap({
+    const input = {
       sub: identity.sub,
       username,
       idempotencyKey,
       ...validation.value,
-    });
+    };
+    const resolution = await repository.resolveMembership(identity.sub, identity.issuedAt);
+    const principal = principalFromResolution(identity, resolution);
+    let result;
+    if (enforceCapability(principal, Capability.householdBootstrap)) {
+      result = await repository.bootstrap(input);
+    } else {
+      // Completed receipt reads cannot create a household for an attached or revoked identity.
+      if (!enforceCapability(principal, Capability.parentCreate)) {
+        const failure = capabilityFailureResponse(principal, requestId);
+        if (failure.statusCode !== 403) return failure;
+        return errorResponse(
+          409,
+          HouseholdErrorCode.membershipExists,
+          MembershipApiMessage.membershipExists,
+          requestId,
+        );
+      }
+      const replay = await repository.findBootstrapReplay(input);
+      if (replay?.kind === 'replayed') result = replay;
+      else if (replay?.kind === 'idempotency-conflict') result = replay;
+      else result = { kind: 'already-member' as const };
+    }
     if (result.kind === 'already-member') {
       return errorResponse(
         409,
         HouseholdErrorCode.membershipExists,
-        'A household membership already exists for this account.',
+        MembershipApiMessage.membershipExists,
         requestId,
       );
     }
@@ -84,7 +115,21 @@ export async function handler(
         requestId,
       );
     }
-    return json(result.kind === 'created' ? 201 : 200, { membership: result.membership });
+    if (result.kind === 'replayed') {
+      let replayPrincipal = principal;
+      if (principal.kind === 'unattached')
+        replayPrincipal = principalFromResolution(
+          identity,
+          await repository.resolveMembership(identity.sub, identity.issuedAt),
+        );
+      if (!completedReplayAllowed(replayPrincipal, Capability.householdBootstrap))
+        return capabilityFailureResponse(replayPrincipal, requestId);
+    }
+    const membership = membershipRepresentation(result.membership);
+    return json(result.kind === 'created' ? 201 : 200, {
+      membership,
+      capabilities: membership.capabilities,
+    });
   });
 }
 

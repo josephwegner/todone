@@ -11,7 +11,7 @@ describe('profile API client', () => {
 
     await expect(fetchMyProfile('private-token', fetchMock)).resolves.toEqual({
       kind: 'success',
-      data: { profile: null },
+      data: { profile: null, allowedActions: [] },
     });
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/v1/profiles/me',

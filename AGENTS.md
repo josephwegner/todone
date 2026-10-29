@@ -34,6 +34,12 @@
 - Treat sign-out as a fail-safe local privacy boundary: clear local credentials and private UI state even if an SDK cleanup call throws. Add server sign-out only when a server-side sign-out contract exists.
 - Pass session and storage dependencies explicitly through every SDK and authenticated-request entry point, including retries. Test the real adapter boundary when mocks could hide persistence or lifecycle behavior.
 
+## Authorization extension contract
+
+- Register every protected operation in `shared/authorizationCapabilities.ts` and implement its decisions in the central policy; do not add feature-local role/state authorization.
+- State eligible principals, trusted tenant/self/target context, lifecycle/version rules, response capabilities/actions and safe denial behavior. Update the authorization matrix and add policy plus endpoint security-negative/side-effect-order tests.
+- Completed retries require explicit caller-bound receipt decisions; a replay result never authorizes new side effects. Client capabilities are presentation-only and never mutation authority.
+
 ## OpenSpec implementation workflow
 
 - At the beginning and end of each implementation slice, reconcile the active OpenSpec checklist. Report completed, remaining, blocked, and intentionally deferred tasks explicitly.

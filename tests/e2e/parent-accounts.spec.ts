@@ -1,3 +1,9 @@
+import {
+  parentCapabilities,
+  childCapabilities,
+  childAllowedActions,
+  pendingAllowedActions,
+} from '../helpers/capabilityFixtures';
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { installSessionHttpFixture, signInSynthetic } from '../helpers/browserSession';
@@ -23,6 +29,7 @@ test('parent creation preserves canonical history and keeps email outside URL/hi
           memberId: 'new-parent',
           username: 'new-parent',
           role: 'parent',
+          capabilities: parentCapabilities,
           activationState: 'PENDING_ACTIVATION',
         },
       },
@@ -92,8 +99,9 @@ test('pending account dialog cancels without a mutation and confirms resend with
             memberId: 'pending-member',
             username: 'new-parent',
             role: 'parent',
+            capabilities: parentCapabilities,
             activationState: 'PENDING_ACTIVATION',
-            allowedActions: ['RESEND_WELCOME', 'CHANGE_EMAIL_AND_RESEND', 'CANCEL_PENDING_ACCOUNT'],
+            allowedActions: pendingAllowedActions,
           },
         ],
       },
@@ -166,9 +174,10 @@ test('child removal confirmation cancels safely and removes only after server su
                 username: 'childremove',
                 displayName: 'Child to remove',
                 role: 'child',
+                capabilities: childCapabilities,
                 activationState: 'ACTIVE',
                 color: 'PINE',
-                allowedActions: [],
+                allowedActions: childAllowedActions,
               },
             ],
       },

@@ -1,4 +1,5 @@
-import { HouseholdRole } from './constants';
+import { Capability } from '../../shared/authorizationCapabilities';
+import { membershipHasCapability, selfContext } from '../authorization/enforcement';
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda';
 import { ParentAccountApi, ParentAccountError } from '../../shared/familyAccountContract';
 import { authenticateRequest } from '../shared/auth';
@@ -30,7 +31,13 @@ export async function handler(
       const resolution = await repository.resolveMembership(identity.sub, identity.issuedAt);
       if (resolution.kind !== MembershipResolutionKind.active)
         return membershipResolutionFailureResponse(resolution, requestId);
-      if (resolution.membership.role !== HouseholdRole.parent)
+      if (
+        !membershipHasCapability(
+          resolution.membership,
+          Capability.recoveryEmailManage,
+          selfContext(resolution.membership),
+        )
+      )
         throw new PendingParentFailure('unavailable');
       if (event.requestContext.http.method === 'GET') {
         if (!validEmail(identity.email)) throw new PendingParentFailure('unavailable');

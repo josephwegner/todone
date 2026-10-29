@@ -42,7 +42,7 @@ describe('household API client', () => {
     });
     await expect(fetchCurrentMembership('private-token', fetchMock)).resolves.toEqual({
       kind: 'success',
-      data: { membership: null },
+      data: { membership: null, capabilities: [] },
     });
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/v1/memberships/current',
@@ -112,5 +112,20 @@ describe('household API client', () => {
       recoverable: false,
       message: 'Your session ended. Sign in to continue.',
     });
+  });
+});
+
+it('keeps unattached bootstrap capability hints and ignores unknown additions', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        membership: null,
+        capabilities: ['future.unknown', 'household.bootstrap', 'household.bootstrap'],
+      }),
+    ),
+  );
+  expect(await fetchCurrentMembership('token', fetchMock)).toEqual({
+    kind: 'success',
+    data: { membership: null, capabilities: ['household.bootstrap'] },
   });
 });

@@ -91,3 +91,25 @@ The capability registry and central policy SHALL have automated coverage for eve
 #### Scenario: Existing endpoint is migrated
 - **WHEN** a household, profile, directory, or family-account endpoint moves to the central policy
 - **THEN** its prior positive and security-negative integration behavior remains covered and feature-local role/state authorization branches are removed
+
+### Requirement: Completed Request Replay
+The server SHALL preserve successful completed retries through an explicit central replay decision.
+It SHALL require current authenticated principal eligibility and a server-owned completed receipt
+bound to the caller, operation, target and matching request payload. A replay decision SHALL only
+return the recorded result and SHALL NOT authorize a write or external administration call.
+Missing target context SHALL continue to deny a new mutation.
+
+#### Scenario: Household creation is retried after attachment
+- **GIVEN** an active parent with a matching completed household-creation receipt
+- **WHEN** that caller repeats the same idempotent request
+- **THEN** the policy permits returning the original successful result without creating data
+
+#### Scenario: Cancellation or removal is retried after target deletion
+- **GIVEN** an active parent and their matching completed cancellation or removal receipt
+- **WHEN** the same completed request is retried after deletion
+- **THEN** the policy permits returning success without another Cognito or persistence mutation
+
+#### Scenario: Receipt cannot authorize a new mutation
+- **GIVEN** a missing, incomplete, foreign or mismatched receipt, or an ineligible current principal
+- **WHEN** a replay is requested
+- **THEN** no replay result is disclosed and no side effect occurs

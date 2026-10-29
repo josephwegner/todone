@@ -141,3 +141,16 @@ Rejected. Broad capabilities cannot safely describe self, target role, household
 ### External policy engine or generic rules language
 
 Rejected. The application is small, the policy is domain-specific, and a new service/dependency adds operational complexity without a current need. A typed in-process policy is boring, testable, and reversible.
+
+## Completed request replay
+
+Separate new-operation authorization from `request.completed.replay`. Authenticate and resolve
+current principal before receipt access. Only active parents can inspect their own administrative
+receipts; repository lookups bind caller, route, idempotency key, target and payload digest. A
+matching completed receipt supplies trusted replay context to policy. The decision permits only
+returning the completed result, including when bootstrap has attached the caller or cancellation
+has deleted its target. It never permits writes, Cognito calls or missing-target mutation. Missing,
+mismatched, incomplete and foreign receipts deny or retain the existing safe conflict response.
+Unattached bootstrap still uses its ordinary capability; inactive, inconsistent and stale
+credentials cannot replay protected results. No receipt contains a persisted grant. Existing
+atomic guards, revocation and idempotency semantics remain in force.

@@ -1,3 +1,7 @@
+import { memberRepresentation } from '../authorization/projections';
+import { principalFromResolution } from '../authorization/policy';
+import { Capability } from '../../shared/authorizationCapabilities';
+import { membershipHasCapability, completedReplayAllowed } from '../authorization/enforcement';
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda';
 import type { CognitoAdministration } from '../cognito/administration';
 import { CognitoAdministrationFailure, CognitoUserKind } from '../cognito/administration';
@@ -14,7 +18,7 @@ import {
   validationFailedResponse,
 } from '../shared/responses';
 import type { TokenVerifier } from '../session/verifier';
-import { isActiveParentMembership, membershipResolutionFailureResponse } from './authorization';
+import { membershipResolutionFailureResponse } from './authorization';
 import {
   HouseholdErrorCode,
   HouseholdField,
@@ -70,7 +74,7 @@ export async function handler(
     if (resolution.kind !== MembershipResolutionKind.active)
       return membershipResolutionFailureResponse(resolution, requestId);
     const caller = resolution.membership;
-    if (!isActiveParentMembership(caller))
+    if (!membershipHasCapability(caller, Capability.childCreate))
       return errorResponse(
         HttpStatus.forbidden,
         HouseholdErrorCode.memberAccessUnavailable,
@@ -102,7 +106,19 @@ export async function handler(
         'The idempotency key was already used with different input.',
         requestId,
       );
-    if (replay?.kind === 'replayed') return json(HttpStatus.ok, { member: replay.member });
+    if (replay?.kind === 'replayed') {
+      if (
+        !completedReplayAllowed(
+          principalFromResolution(identity, resolution),
+          Capability.childCreate,
+        )
+      )
+        return membershipResolutionFailureResponse(
+          { kind: MembershipResolutionKind.inactive },
+          requestId,
+        );
+      return json(HttpStatus.ok, { member: memberRepresentation(caller, replay.member) });
+    }
     const administration = dependencies?.administration ?? getCognitoAdministration();
     try {
       const created = await administration.createUser({
@@ -127,7 +143,7 @@ export async function handler(
           requestId,
         );
       return json(result.kind === 'created' ? HttpStatus.created : HttpStatus.ok, {
-        member: result.member,
+        member: memberRepresentation(caller, result.member),
       });
     } catch (error) {
       if (

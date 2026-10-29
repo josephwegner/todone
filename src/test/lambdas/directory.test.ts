@@ -1,3 +1,4 @@
+import { Capability } from '../../../shared/authorizationCapabilities';
 import { describe, expect, it } from 'vitest';
 import { directoryForCaller } from '../../../lambdas/households/directory';
 import type { CurrentMembership, FamilyDirectoryMember } from '../../../lambdas/households/model';
@@ -39,10 +40,17 @@ const members: FamilyDirectoryMember[] = [
 describe('family directory visibility', () => {
   it('gives active parents the three pending-parent actions but never returns inactive members', () => {
     expect(directoryForCaller(parent, members)).toEqual([
-      expect.objectContaining({ memberId: 'active', allowedActions: [] }),
+      expect.objectContaining({
+        memberId: 'active',
+        allowedActions: [Capability.childPasswordReset, Capability.childRemove],
+      }),
       expect.objectContaining({
         memberId: 'pending',
-        allowedActions: ['RESEND_WELCOME', 'CHANGE_EMAIL_AND_RESEND', 'CANCEL_PENDING_ACCOUNT'],
+        allowedActions: [
+          Capability.pendingParentCancel,
+          Capability.pendingParentEmail,
+          Capability.pendingParentResend,
+        ],
       }),
     ]);
   });

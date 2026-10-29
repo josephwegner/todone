@@ -307,6 +307,7 @@ body {
     width: 100%;
   }
   .family-page {
+    container-type: inline-size;
     display: grid;
     min-width: 0;
     grid-template-columns: minmax(0, 1fr);
@@ -389,7 +390,8 @@ body {
     margin: -0.15rem 0 0 1.75rem;
   }
 
-  @media (min-width: 40rem) {
+  /* Use actual content width so zoomed/narrow surfaces retain readable stacked rows. */
+  @container (min-width: 40rem) {
     .family-page__heading {
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: end;

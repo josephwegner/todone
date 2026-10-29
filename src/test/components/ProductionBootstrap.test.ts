@@ -1,3 +1,9 @@
+import {
+  parentCapabilities,
+  profileAllowedActions,
+  childAllowedActions,
+} from '../../../tests/helpers/capabilityFixtures';
+import { Capability } from '../../../shared/authorizationCapabilities';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory } from 'vue-router';
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
@@ -83,6 +89,7 @@ function mountBootstrap(options: Record<string, unknown> = {}) {
 const membership = {
   memberId: 'member-one',
   role: 'parent',
+  capabilities: parentCapabilities,
   household: {
     householdId: 'house-one',
     name: 'River House',
@@ -94,8 +101,14 @@ describe('ProductionBootstrap', () => {
   beforeEach(async () => {
     vi.resetAllMocks();
     restoreSession.mockResolvedValue(null);
-    fetchCurrentMembership.mockResolvedValue({ kind: 'success', data: { membership: null } });
-    fetchMyProfile.mockResolvedValue({ kind: 'success', data: { profile: null } });
+    fetchCurrentMembership.mockResolvedValue({
+      kind: 'success',
+      data: { membership: null, capabilities: [Capability.householdBootstrap] },
+    });
+    fetchMyProfile.mockResolvedValue({
+      kind: 'success',
+      data: { profile: null, allowedActions: profileAllowedActions },
+    });
     fetchFamilyMembers.mockResolvedValue({
       kind: 'success',
       data: {
@@ -107,7 +120,7 @@ describe('ProductionBootstrap', () => {
             activationState: 'ACTIVE',
             displayName: 'River',
             color: 'PINE',
-            allowedActions: [],
+            allowedActions: [Capability.profileUpdate],
           },
         ],
       },
@@ -269,7 +282,14 @@ describe('ProductionBootstrap', () => {
     fetchMyProfile.mockResolvedValue({
       kind: 'success',
       data: {
-        profile: { memberId: 'member-one', displayName: 'River', color: 'PINE', version: 1 },
+        allowedActions: profileAllowedActions,
+        profile: {
+          allowedActions: profileAllowedActions,
+          memberId: 'member-one',
+          displayName: 'River',
+          color: 'PINE',
+          version: 1,
+        },
       },
     });
     createChild.mockResolvedValue({
@@ -282,7 +302,7 @@ describe('ProductionBootstrap', () => {
           role: 'child',
           activationState: 'ACTIVE',
           color: 'PINE',
-          allowedActions: [],
+          allowedActions: childAllowedActions,
         },
       },
     });
@@ -322,7 +342,9 @@ describe('ProductionBootstrap', () => {
     fetchMyProfile.mockResolvedValue({
       kind: 'success',
       data: {
+        allowedActions: profileAllowedActions,
         profile: {
+          allowedActions: profileAllowedActions,
           memberId: 'member-one',
           displayName: 'River',
           color: 'PINE',
@@ -341,7 +363,7 @@ describe('ProductionBootstrap', () => {
             activationState: 'ACTIVE',
             displayName: 'Child One',
             color: 'PINE',
-            allowedActions: [],
+            allowedActions: childAllowedActions,
           },
           {
             memberId: 'child-two',
@@ -350,7 +372,7 @@ describe('ProductionBootstrap', () => {
             activationState: 'ACTIVE',
             displayName: 'Child Two',
             color: 'PINE',
-            allowedActions: [],
+            allowedActions: childAllowedActions,
           },
         ],
       },
@@ -475,6 +497,24 @@ describe('ProductionBootstrap', () => {
     wrapper.unmount();
   });
 
+  it('does not infer bootstrap permission from null membership when capabilities are missing', async () => {
+    restoreSession.mockResolvedValue({
+      idToken: 'token',
+      accessToken: 'access',
+      expiresAt: new Date('2030-01-01'),
+    });
+    fetchCurrentMembership.mockResolvedValue({
+      kind: 'success',
+      data: { membership: null, capabilities: [] },
+    });
+    const wrapper = mountBootstrap();
+    await flushPromises();
+    expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined();
+    expect(wrapper.text()).toContain('This action is currently unavailable');
+    await wrapper.get('form').trigger('submit');
+    expect(createHousehold).not.toHaveBeenCalled();
+  });
+
   it('validates household name with focus, then requires profile setup after creation', async () => {
     restoreSession.mockResolvedValue({
       idToken: 'token',
@@ -498,7 +538,7 @@ describe('ProductionBootstrap', () => {
       expect.objectContaining({ credentials: expect.any(Function) }),
       expect.objectContaining({ name: 'River House', timezone: 'America/Chicago' }),
     );
-    expect(fetchMyProfile).not.toHaveBeenCalled();
+    expect(fetchMyProfile).toHaveBeenCalledOnce();
     expect(session.state.value).toMatchObject({
       kind: 'ready',
       context: { kind: 'profile-required' },
@@ -517,7 +557,14 @@ describe('ProductionBootstrap', () => {
     saveMyProfile.mockResolvedValue({
       kind: 'success',
       data: {
-        profile: { memberId: 'member-one', displayName: 'River', color: 'LAKE', version: 1 },
+        allowedActions: profileAllowedActions,
+        profile: {
+          allowedActions: profileAllowedActions,
+          memberId: 'member-one',
+          displayName: 'River',
+          color: 'LAKE',
+          version: 1,
+        },
       },
     });
     const wrapper = mountBootstrap({ attachTo: document.body });
@@ -533,7 +580,14 @@ describe('ProductionBootstrap', () => {
     fetchMyProfile.mockResolvedValue({
       kind: 'success',
       data: {
-        profile: { memberId: 'member-one', displayName: 'River', color: 'LAKE', version: 1 },
+        allowedActions: profileAllowedActions,
+        profile: {
+          allowedActions: profileAllowedActions,
+          memberId: 'member-one',
+          displayName: 'River',
+          color: 'LAKE',
+          version: 1,
+        },
       },
     });
     await wrapper.get('form').trigger('submit');
@@ -559,7 +613,10 @@ describe('ProductionBootstrap', () => {
     fetchCurrentMembership.mockResolvedValue({ kind: 'success', data: { membership } });
     fetchMyProfile
       .mockResolvedValueOnce({ kind: 'error', message: 'Offline', recoverable: true })
-      .mockResolvedValueOnce({ kind: 'success', data: { profile: null } });
+      .mockResolvedValueOnce({
+        kind: 'success',
+        data: { profile: null, allowedActions: profileAllowedActions },
+      });
     void router.push({ name: AppRouteName.signIn });
     const wrapper = mount(SessionRoot, {
       global: { plugins: [router], provide: { [sessionControllerKey as symbol]: session } },
@@ -612,7 +669,14 @@ describe('ProductionBootstrap', () => {
           context: {
             kind: 'active',
             membership: { ...membership, username: 'parent-one' },
-            profile: { memberId: 'member-one', displayName: 'River', color: 'PINE', version: 1 },
+            allowedActions: profileAllowedActions,
+            profile: {
+              allowedActions: profileAllowedActions,
+              memberId: 'member-one',
+              displayName: 'River',
+              color: 'PINE',
+              version: 1,
+            },
           },
         }),
       });
@@ -676,7 +740,14 @@ describe('ProductionBootstrap', () => {
     fetchMyProfile.mockResolvedValue({
       kind: 'success',
       data: {
-        profile: { memberId: 'member-one', displayName: 'River', color: 'PINE', version: 1 },
+        allowedActions: profileAllowedActions,
+        profile: {
+          allowedActions: profileAllowedActions,
+          memberId: 'member-one',
+          displayName: 'River',
+          color: 'PINE',
+          version: 1,
+        },
       },
     });
     fetchFamilyMembers.mockResolvedValue({
@@ -690,7 +761,7 @@ describe('ProductionBootstrap', () => {
             activationState: 'ACTIVE',
             displayName: 'River',
             color: 'PINE',
-            allowedActions: [],
+            allowedActions: [Capability.profileUpdate],
           },
         ],
       },
@@ -698,7 +769,14 @@ describe('ProductionBootstrap', () => {
     saveMyProfile.mockResolvedValue({
       kind: 'success',
       data: {
-        profile: { memberId: 'member-one', displayName: 'River Two', color: 'LAKE', version: 2 },
+        allowedActions: profileAllowedActions,
+        profile: {
+          allowedActions: profileAllowedActions,
+          memberId: 'member-one',
+          displayName: 'River Two',
+          color: 'LAKE',
+          version: 2,
+        },
       },
     });
     const wrapper = mountBootstrap();
@@ -735,7 +813,14 @@ describe('ProductionBootstrap', () => {
     fetchMyProfile.mockResolvedValue({
       kind: 'success',
       data: {
-        profile: { memberId: 'member-one', displayName: 'River', color: 'PINE', version: 1 },
+        allowedActions: profileAllowedActions,
+        profile: {
+          allowedActions: profileAllowedActions,
+          memberId: 'member-one',
+          displayName: 'River',
+          color: 'PINE',
+          version: 1,
+        },
       },
     });
     fetchFamilyMembers.mockResolvedValue({
@@ -749,7 +834,7 @@ describe('ProductionBootstrap', () => {
             activationState: 'ACTIVE',
             displayName: 'River',
             color: 'PINE',
-            allowedActions: [],
+            allowedActions: [Capability.profileUpdate],
           },
         ],
       },
@@ -788,7 +873,14 @@ describe('ProductionBootstrap', () => {
     fetchMyProfile.mockResolvedValue({
       kind: 'success',
       data: {
-        profile: { memberId: 'member-one', displayName: 'River', color: 'LAKE', version: 1 },
+        allowedActions: profileAllowedActions,
+        profile: {
+          allowedActions: profileAllowedActions,
+          memberId: 'member-one',
+          displayName: 'River',
+          color: 'LAKE',
+          version: 1,
+        },
       },
     });
     fetchFamilyMembers.mockResolvedValue({ kind: 'success', data: { members: [] } });

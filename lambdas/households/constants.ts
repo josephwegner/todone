@@ -31,12 +31,6 @@ export const MembershipField = {
   createdAt: 'createdAt',
 } as const;
 
-export const PendingParentAction = {
-  resendWelcome: 'RESEND_WELCOME',
-  changeEmailAndResend: 'CHANGE_EMAIL_AND_RESEND',
-  cancelPendingAccount: 'CANCEL_PENDING_ACCOUNT',
-} as const;
-
 export const USERNAME_PATTERN = /^[a-z0-9_-]{3,24}$/;
 export const USERNAME_MIN_LENGTH = 3;
 export const USERNAME_MAX_LENGTH = 24;

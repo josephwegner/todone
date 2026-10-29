@@ -19,3 +19,7 @@
 - [ ] 3.3 Document and verify staged migration and rollback with existing daily templates; completion: rollback preserves daily behavior and generated Todo history.
 - [ ] 3.4 Capture and manually review cadence creation/edit/removal, clamping, boundary, current/history, and failure states at compact, medium, wide, 320-pixel reflow, and 200-percent zoom; completion: schedule complexity remains progressively disclosed, text carries cadence meaning, and no calendar dashboard or decorative cadence treatment appears.
 - [ ] 3.5 Run format, lint, typecheck, unit tests, integration tests, build, Playwright, and accessibility checks; completion: all required checks pass.
+
+## Central authorization integration
+
+- [ ] Register each delivered protected operation in the shared capability registry and central policy with explicit principal, trusted context and lifecycle rules; update the authorization matrix, response capabilities/actions and policy plus endpoint-negative tests, including denial before side effects and completed-replay boundaries. Completion: no feature-local role/state authorization or client-supplied grant is introduced.

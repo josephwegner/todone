@@ -1,3 +1,7 @@
+import { Capability } from '../../shared/authorizationCapabilities';
+import { membershipHasCapability } from '../authorization/enforcement';
+import { principalCapabilities, principalFromResolution } from '../authorization/policy';
+import { membershipRepresentation } from '../authorization/projections';
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda';
 import { authenticateRequest } from '../shared/auth';
 import { handleObservedRequest } from '../shared/request';
@@ -26,9 +30,19 @@ export async function handler(
     const repository = dependencies?.repository ?? getHouseholdRepository();
     const resolution = await repository.resolveMembership(identity.sub, identity.issuedAt);
     if (resolution.kind === MembershipResolutionKind.unattached)
-      return json(200, { membership: null });
-    if (resolution.kind === MembershipResolutionKind.active)
-      return json(200, { membership: resolution.membership });
+      return json(200, {
+        membership: null,
+        capabilities: principalCapabilities(principalFromResolution(identity, resolution)),
+      });
+    if (resolution.kind === MembershipResolutionKind.active) {
+      if (!membershipHasCapability(resolution.membership, Capability.householdRead))
+        return membershipResolutionFailureResponse(
+          { kind: MembershipResolutionKind.inactive },
+          requestId,
+        );
+      const membership = membershipRepresentation(resolution.membership);
+      return json(200, { membership, capabilities: membership.capabilities });
+    }
     // This authenticated self-read discloses only the caller's outcome. Other
     // protected operations retain the generic membership-denial contract.
     if (resolution.kind === MembershipResolutionKind.pendingActivation) {

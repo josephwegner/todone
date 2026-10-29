@@ -31,7 +31,7 @@ describe('session context boundary', () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ membership: null })));
     expect(await readSessionContext(credentials, new AbortController().signal, fetchMock)).toEqual({
       kind: 'success',
-      context: { kind: 'unattached' },
+      context: { kind: 'unattached', capabilities: [] },
     });
     expect(fetchMock).toHaveBeenCalledOnce();
   });

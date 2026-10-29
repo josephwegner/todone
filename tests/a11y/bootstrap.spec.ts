@@ -1,3 +1,10 @@
+import { Capability } from '../../shared/authorizationCapabilities';
+import {
+  parentCapabilities,
+  childCapabilities,
+  profileAllowedActions,
+  childAllowedActions,
+} from '../helpers/capabilityFixtures';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
@@ -60,6 +67,7 @@ async function signInAsChild(page: Page, failureCode?: string): Promise<void> {
               memberId: 'child-member',
               username: 'child-one',
               role: 'child',
+              capabilities: childCapabilities,
               household: {
                 householdId: 'house-one',
                 name: 'River House',
@@ -73,6 +81,7 @@ async function signInAsChild(page: Page, failureCode?: string): Promise<void> {
     route.fulfill({
       headers: { 'cache-control': 'no-store' },
       json: {
+        allowedActions: profileAllowedActions,
         profile: { memberId: 'child-member', displayName: 'Moss', color: 'MOSS', version: 1 },
       },
     }),
@@ -107,6 +116,7 @@ async function signInAsParent(page: Page): Promise<void> {
           memberId: 'parent-member',
           username: 'parent-one',
           role: 'parent',
+          capabilities: parentCapabilities,
           household: {
             householdId: 'house-one',
             name: 'River House',
@@ -120,6 +130,7 @@ async function signInAsParent(page: Page): Promise<void> {
     route.fulfill({
       headers: { 'cache-control': 'no-store' },
       json: {
+        allowedActions: profileAllowedActions,
         profile: { memberId: 'parent-member', displayName: 'River', color: 'PINE', version: 1 },
       },
     }),
@@ -132,28 +143,31 @@ async function signInAsParent(page: Page): Promise<void> {
             memberId: 'parent-member',
             username: 'parent-one',
             role: 'parent',
+            capabilities: parentCapabilities,
             activationState: 'ACTIVE',
             displayName: 'River',
             color: 'PINE',
-            allowedActions: [],
+            allowedActions: [Capability.profileUpdate],
           },
           {
             memberId: 'pending-parent',
             username: 'morgan-vale',
             role: 'parent',
+            capabilities: parentCapabilities,
             activationState: 'PENDING_ACTIVATION',
             displayName: 'Morgan Vale',
             color: 'MOSS',
-            allowedActions: ['RESEND_WELCOME'],
+            allowedActions: [Capability.pendingParentResend],
           },
           {
             memberId: 'child-member',
             username: 'juniper',
             role: 'child',
+            capabilities: childCapabilities,
             activationState: 'ACTIVE',
             displayName: 'Juniper River',
             color: 'LAKE',
-            allowedActions: [],
+            allowedActions: childAllowedActions,
           },
         ],
       },

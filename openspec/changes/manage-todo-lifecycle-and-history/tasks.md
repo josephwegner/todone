@@ -17,3 +17,7 @@
 - [ ] 3.2 Add Playwright and accessibility tests for archival, active/completed restore, child undo, parent reopen, deletion confirmation/cancellation, and child history; completion: keyboard and screen-reader flows pass at all responsive targets.
 - [ ] 3.3 Capture and manually review active, completed, archived, empty, conflict, and destructive states at compact, medium, wide, 320-pixel reflow, and 200-percent zoom; completion: history remains visually quiet and chronological, actions are progressively disclosed, long content wraps, and status does not depend on color alone.
 - [ ] 3.4 Run all required quality checks; completion: format, lint, typecheck, unit, integration, build, Playwright, and accessibility checks pass.
+
+## Central authorization integration
+
+- [ ] Register each delivered protected operation in the shared capability registry and central policy with explicit principal, trusted context and lifecycle rules; update the authorization matrix, response capabilities/actions and policy plus endpoint-negative tests, including denial before side effects and completed-replay boundaries. Completion: no feature-local role/state authorization or client-supplied grant is introduced.

@@ -1,3 +1,8 @@
+import {
+  Capability,
+  hasCapability,
+  type CapabilityKey,
+} from '../../shared/authorizationCapabilities';
 import { createRouter, createWebHistory, type RouterHistory } from 'vue-router';
 import RecoveryEmailPage from '../components/RecoveryEmailPage.vue';
 import ParentAccountPage from '../components/ParentAccountPage.vue';
@@ -37,20 +42,26 @@ export function sessionRouteDestination(
     if (routeName === AppRouteName.profileSetup) return true;
     return AppRouteName.profileSetup;
   }
-  const home = context.membership.role === 'child' ? AppRouteName.todos : AppRouteName.family;
+  const capabilities = context.membership.capabilities;
+  let home: RouteName = AppRouteName.todos;
+  if (hasCapability(capabilities, Capability.childManage)) home = AppRouteName.family;
+  const required: Partial<Record<RouteName, CapabilityKey>> = {
+    [AppRouteName.family]: Capability.childManage,
+    [AppRouteName.newChild]: Capability.childCreate,
+    [AppRouteName.newParent]: Capability.parentCreate,
+    [AppRouteName.security]: Capability.recoveryEmailSelfManage,
+    [AppRouteName.resetChildPassword]: Capability.childManage,
+    [AppRouteName.profile]: Capability.profileSelfRead,
+  };
+  const key = required[routeName];
   if (
     routeName === AppRouteName.root ||
     isPublicRouteName(routeName) ||
     routeName === AppRouteName.householdSetup ||
-    routeName === AppRouteName.profileSetup ||
-    (context.membership.role === 'child' &&
-      (routeName === AppRouteName.family ||
-        routeName === AppRouteName.newChild ||
-        routeName === AppRouteName.newParent ||
-        routeName === AppRouteName.security ||
-        routeName === AppRouteName.resetChildPassword))
+    routeName === AppRouteName.profileSetup
   )
     return home;
+  if (key && !hasCapability(capabilities, key)) return home;
   return true;
 }
 

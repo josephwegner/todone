@@ -5,8 +5,7 @@ context: |
 
   Product source of truth:
   - docs/product/brief.md
-  - docs/product/mvp-scope.md
-  - docs/product/user-flows.md
+  - docs/ux/global-user-flows.md
 
   Engineering source of truth:
   - AGENTS.md
@@ -32,6 +31,8 @@ context: |
   - Playwright tests for critical user journeys.
   - Accessibility checks for user-facing surfaces.
   - Security-negative tests for authorization and ownership boundaries.
+  - Protected operations extend the shared capability registry and central policy; no feature-local role/state authorization.
+  - Define principal/context/lifecycle rules, presentation actions, matrix entries, completed-replay boundaries, and policy plus endpoint-negative tests.
   - Production build must pass before a task is complete.
 
 rules:

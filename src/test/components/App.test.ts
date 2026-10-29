@@ -1,6 +1,7 @@
+import { parentCapabilities, childCapabilities } from '../../../tests/helpers/capabilityFixtures';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
-import { activeMembershipRole, applyMembershipContext } from '../../presentation/appContext';
+import { activeCapabilities, applyMembershipContext } from '../../presentation/appContext';
 import { appRouteDefinitions } from '../../router/routes';
 import { mount } from '@vue/test-utils';
 import App from '../../App.vue';
@@ -11,7 +12,7 @@ describe('App', () => {
   it.each(['parent', 'child'] as const)(
     'shows only available %s navigation as links',
     async (role) => {
-      activeMembershipRole.value = role;
+      activeCapabilities.value = role === 'parent' ? parentCapabilities : childCapabilities;
       const router = createRouter({
         history: createMemoryHistory(),
         routes: Object.values(appRouteDefinitions).map(({ name, path }) => ({

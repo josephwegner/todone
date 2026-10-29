@@ -1,3 +1,5 @@
+import { Capability } from '../../shared/authorizationCapabilities';
+import { membershipHasCapability, memberContext } from '../authorization/enforcement';
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda';
 import type { CognitoAdministration } from '../cognito/administration';
 import {
@@ -18,11 +20,7 @@ import {
   validationFailedResponse,
 } from '../shared/responses';
 import type { TokenVerifier } from '../session/verifier';
-import {
-  isActiveParentMembership,
-  isManageableChild,
-  membershipResolutionFailureResponse,
-} from './authorization';
+import { membershipResolutionFailureResponse } from './authorization';
 import { HouseholdErrorCode, HouseholdField, MembershipResolutionKind } from './constants';
 import type { HouseholdRepository } from './model';
 import { getHouseholdRepository } from './runtime';
@@ -54,7 +52,7 @@ export async function handler(
     if (resolution.kind !== MembershipResolutionKind.active)
       return membershipResolutionFailureResponse(resolution, requestId);
     const caller = resolution.membership;
-    if (!isActiveParentMembership(caller))
+    if (!membershipHasCapability(caller, Capability.childManage))
       return errorResponse(
         HttpStatus.forbidden,
         HouseholdErrorCode.memberAccessUnavailable,
@@ -86,7 +84,13 @@ export async function handler(
         messages.membershipApi.targetNotFound,
         requestId,
       );
-    if (!isManageableChild(caller, target, caller.household.householdId))
+    if (
+      !membershipHasCapability(
+        caller,
+        Capability.childPasswordReset,
+        memberContext(caller.household.householdId, target),
+      )
+    )
       return errorResponse(
         HttpStatus.forbidden,
         HouseholdErrorCode.targetNotManageable,

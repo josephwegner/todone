@@ -1,10 +1,13 @@
+import { Capability } from '../../../shared/authorizationCapabilities';
+import { parentCapabilities } from '../../../tests/helpers/capabilityFixtures';
 import { describe, expect, it } from 'vitest';
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 import { handler as createHousehold } from '../../../lambdas/households/create';
 import { handler as currentMembership } from '../../../lambdas/households/current';
 import { handler as familyDirectory } from '../../../lambdas/households/directory';
 import { readHandler as readProfile } from '../../../lambdas/households/profile';
-import { isResourceInHousehold } from '../../../lambdas/households/authorization';
+import { decide, principalFromMembership } from '../../../lambdas/authorization/policy';
+import { selfContext } from '../../../lambdas/authorization/enforcement';
 import { InMemoryHouseholdRepository } from '../../../lambdas/households/repository';
 import { MembershipRecordRepository } from '../helpers/membershipRecordRepository';
 import type {
@@ -86,7 +89,10 @@ describe('household bootstrap API and persistence', () => {
     const repository = new InMemoryHouseholdRepository();
     const response = await currentMembership(event('GET'), { repository });
     expect(response.statusCode).toBe(200);
-    expect(JSON.parse(response.body ?? '{}')).toEqual({ membership: null });
+    expect(JSON.parse(response.body ?? '{}')).toEqual({
+      membership: null,
+      capabilities: [Capability.householdBootstrap],
+    });
   });
 
   it('atomically creates the household and immutable parent membership', async () => {
@@ -97,6 +103,7 @@ describe('household bootstrap API and persistence', () => {
     );
     expect(response.statusCode).toBe(201);
     expect(JSON.parse(response.body ?? '{}').membership).toEqual({
+      capabilities: [...parentCapabilities].sort(),
       memberId: 'generated-id',
       username: 'parent',
       role: 'parent',
@@ -184,8 +191,16 @@ describe('household bootstrap API and persistence', () => {
       timezone: 'America/Chicago',
     });
     const membership = await activeMembership(repository, 'sub-one');
-    expect(isResourceInHousehold(membership, membership.household.householdId)).toBe(true);
-    expect(isResourceInHousehold(membership, 'another-household')).toBe(false);
+    expect(
+      decide(principalFromMembership(membership), Capability.profileRead, selfContext(membership))
+        .allowed,
+    ).toBe(true);
+    expect(
+      decide(principalFromMembership(membership), Capability.profileRead, {
+        ...selfContext(membership),
+        householdId: 'another-household',
+      }).allowed,
+    ).toBe(false);
   });
 
   it('creates and version-updates a member profile without accepting stale writes', async () => {
@@ -266,7 +281,7 @@ describe('household bootstrap API and persistence', () => {
           activationState: 'ACTIVE',
           displayName: 'Parent One',
           color: 'PINE',
-          allowedActions: [],
+          allowedActions: [Capability.profileUpdate],
         },
       ],
     });

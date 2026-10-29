@@ -90,7 +90,7 @@ describe('active Membership resolution', () => {
     });
   });
 
-  it('enforces the lookup-owned cutoff only for an otherwise active Membership', () => {
+  it('enforces the lookup-owned cutoff for an otherwise active Membership', () => {
     const cutoff = '2028-01-01T00:00:00.000Z';
     const input = records({ lookup: { credentialsValidAfter: cutoff } });
     expect(resolveRecords(input)).toEqual({
@@ -100,4 +100,14 @@ describe('active Membership resolution', () => {
       kind: 'credentials-stale',
     });
   });
+});
+
+it('rejects stale pending-self credentials before activation eligibility', () => {
+  const input = records({
+    lookup: {
+      activationState: 'PENDING_ACTIVATION',
+      credentialsValidAfter: '2028-01-01T00:00:00.000Z',
+    },
+  });
+  expect(resolveRecords(input)).toEqual({ kind: 'credentials-stale' });
 });

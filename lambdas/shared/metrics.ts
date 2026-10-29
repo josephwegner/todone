@@ -41,3 +41,30 @@ export function emitApiMetrics(fields: ApiMetricFields): void {
   };
   console.log(JSON.stringify(document));
 }
+
+/** Aggregate policy observation deliberately excludes request identity and policy context. */
+export function emitAuthorizationDecision(
+  capability: import('../../shared/authorizationCapabilities').CapabilityKey,
+  allowed: boolean,
+): void {
+  console.log(
+    JSON.stringify({
+      _aws: {
+        Timestamp: Date.now(),
+        CloudWatchMetrics: [
+          {
+            Namespace: NAMESPACE,
+            Dimensions: [['Capability']],
+            Metrics: [
+              { Name: 'CapabilityAllowed', Unit: 'Count' },
+              { Name: 'CapabilityDenied', Unit: 'Count' },
+            ],
+          },
+        ],
+      },
+      Capability: capability,
+      CapabilityAllowed: Number(allowed),
+      CapabilityDenied: Number(!allowed),
+    }),
+  );
+}

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { isManageableChild, requireActiveParent } from '../../../lambdas/households/authorization';
+import { Capability } from '../../../shared/authorizationCapabilities';
+import {
+  decide,
+  principalFromMembership,
+  resolvePrincipal,
+} from '../../../lambdas/authorization/policy';
+import { memberContext } from '../../../lambdas/authorization/enforcement';
 import { MembershipRecordRepository } from '../helpers/membershipRecordRepository';
 import type {
   CurrentMembership,
@@ -30,16 +36,28 @@ function member(overrides: Partial<FamilyDirectoryMember>): FamilyDirectoryMembe
   };
 }
 
+function targetAllowed(
+  caller: CurrentMembership,
+  target: FamilyDirectoryMember,
+  householdId: string,
+) {
+  return decide(
+    principalFromMembership(caller),
+    Capability.childPasswordReset,
+    memberContext(householdId, target),
+  ).allowed;
+}
+
 describe('parent target authorization', () => {
   it('allows only an active child target in the caller household context', () => {
-    expect(isManageableChild(parent, member({}), 'house')).toBe(true);
-    expect(isManageableChild(parent, member({ role: 'parent' }), 'house')).toBe(false);
-    expect(
-      isManageableChild(parent, member({ activationState: 'PENDING_ACTIVATION' }), 'house'),
-    ).toBe(false);
-    expect(isManageableChild(parent, member({ activationState: 'INACTIVE' }), 'house')).toBe(false);
-    expect(isManageableChild(parent, member({}), 'other-house')).toBe(false);
-    expect(isManageableChild(child, member({}), 'house')).toBe(false);
+    expect(targetAllowed(parent, member({}), 'house')).toBe(true);
+    expect(targetAllowed(parent, member({ role: 'parent' }), 'house')).toBe(false);
+    expect(targetAllowed(parent, member({ activationState: 'PENDING_ACTIVATION' }), 'house')).toBe(
+      false,
+    );
+    expect(targetAllowed(parent, member({ activationState: 'INACTIVE' }), 'house')).toBe(false);
+    expect(targetAllowed(parent, member({}), 'other-house')).toBe(false);
+    expect(targetAllowed(child, member({}), 'house')).toBe(false);
   });
 
   it.each(['PENDING_ACTIVATION', 'INACTIVE'] as const)(
@@ -75,7 +93,12 @@ describe('parent target authorization', () => {
         membership,
       });
 
-      await expect(requireActiveParent(repository, 'parent-sub', 1800000000)).resolves.toBeNull();
+      const principal = await resolvePrincipal(repository, {
+        sub: 'parent-sub',
+        username: 'parent',
+        issuedAt: 1800000000,
+      });
+      expect(decide(principal, Capability.childManage).allowed).toBe(false);
     },
   );
 });

@@ -88,7 +88,7 @@ describe('context freshness and authoritative denials', () => {
     expect(session.state.value).toEqual({ kind: 'signed-out', reason: 'ended' });
     session.dispose();
   });
-  it('keeps a valid account after target denial, and revalidates generic access denial', async () => {
+  it('keeps a valid account and revalidates context after target or generic access denial', async () => {
     const { session, readContext, signOut } = fixture();
     await session.initialize();
     for (const code of ['TARGET_NOT_MANAGEABLE', 'MEMBER_ACCESS_UNAVAILABLE']) {
@@ -101,7 +101,7 @@ describe('context freshness and authoritative denials', () => {
       expect(session.state.value.kind).toBe('ready');
       expect(signOut).not.toHaveBeenCalled();
     }
-    expect(readContext).toHaveBeenCalledTimes(2);
+    expect(readContext).toHaveBeenCalledTimes(3);
     session.dispose();
   });
   it('does not overwrite confirmed profile updates with an older pending refresh', async () => {

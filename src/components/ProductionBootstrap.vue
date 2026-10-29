@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import {
+  Capability,
+  hasCapability,
+  type CapabilityKey,
+} from '../../shared/authorizationCapabilities';
 import ChildRemovalControl from './ChildRemovalControl.vue';
 import PendingParentControls from './PendingParentControls.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
@@ -29,6 +34,7 @@ import {
   ProfileColor,
   ProfileColorHex,
   saveMyProfile,
+  fetchMyProfile,
   type Profile,
   type ProfileColorId,
 } from '../services/profileClient';
@@ -72,6 +78,8 @@ onBeforeUnmount(() => {
   clearSecrets();
   membership.value = null;
   profile.value = null;
+  profileAllowedActions.value = [];
+  profileCapabilityRefreshBlocked.value = false;
   familyMembers.value = [];
   displayName.value = '';
   profileColor.value = '';
@@ -132,6 +140,23 @@ const profileColor = ref<ProfileColorId | ''>(
 const profile = ref<Profile | null>(
   (initialContext?.kind === 'active' ? initialContext.profile : null) ?? null,
 );
+const profileCapabilityRefreshBlocked = ref(false);
+const profileAllowedActions = ref<readonly CapabilityKey[]>(
+  initialContext?.kind === 'active'
+    ? (initialContext.profile.allowedActions ?? [])
+    : initialContext?.kind === 'profile-required'
+      ? (initialContext.allowedActions ?? [])
+      : [],
+);
+const can = (key: CapabilityKey) => hasCapability(membership.value?.capabilities, key);
+const canBootstrap = computed(() => {
+  const state = session.state.value;
+  return (
+    state.kind === 'ready' &&
+    state.context.kind === 'unattached' &&
+    hasCapability(state.context.capabilities, Capability.householdBootstrap)
+  );
+});
 let profileDraftInitialized = initialContext?.kind === 'active';
 const familyMembers = ref<FamilyMember[]>([]);
 const childUsername = ref('');
@@ -152,8 +177,7 @@ const resetTarget = computed(() =>
   familyMembers.value.find(
     (member) =>
       member.memberId === route.params.memberId &&
-      member.role === 'child' &&
-      member.activationState === 'ACTIVE',
+      hasCapability(member.allowedActions, Capability.childPasswordReset),
   ),
 );
 let idempotencyKey = globalThis.crypto.randomUUID();
@@ -212,6 +236,18 @@ watch(session.state, (state) => {
   if (state.kind === 'signed-out' && state.reason === 'sign-out-incomplete')
     status.value = messages.session.signOutIncomplete;
   if (state.kind !== 'ready') return;
+  profileAllowedActions.value =
+    state.context.kind === 'active'
+      ? (state.context.profile.allowedActions ?? [])
+      : state.context.kind === 'profile-required'
+        ? (state.context.allowedActions ?? [])
+        : [];
+  if (profileCapabilityRefreshBlocked.value) {
+    profileCapabilityRefreshBlocked.value = false;
+    status.value = familyCopy.capabilitiesRefreshed;
+    statusIsError.value = false;
+    void focusRouteHeading();
+  }
   const previousProfile = profile.value;
   const hasDraft =
     previousProfile &&
@@ -260,6 +296,18 @@ async function adoptSessionContext(): Promise<void> {
     return;
   }
   if (context.kind === 'profile-required') {
+    profileAllowedActions.value = context.allowedActions ?? [];
+    if (!context.allowedActions) {
+      const result = await fetchMyProfile(session.requestContext());
+      if (!isPageCurrent()) return;
+      if (result.kind === 'error') {
+        status.value = result.message;
+        statusIsError.value = true;
+        transientScreen.value = 'profile-load-error';
+        return;
+      }
+      profileAllowedActions.value = result.data.allowedActions ?? [];
+    }
     await navigate(AppRouteName.profileSetup, true);
     return;
   }
@@ -346,7 +394,7 @@ async function finishRecovery(): Promise<void> {
 async function showResolvedProfile(idToken: CredentialSource): Promise<void> {
   if (!profile.value) return;
   applyProfileTone(profile.value.color);
-  if (membership.value?.role === 'child' && route.name !== AppRouteName.profile) {
+  if (!can(Capability.childManage) && route.name !== AppRouteName.profile) {
     await clearTransientScreenAndNavigate(AppRouteName.todos);
     return;
   }
@@ -406,6 +454,17 @@ async function loadFamilyManagement(
   }
 }
 
+async function refreshFamilyActions(): Promise<void> {
+  familyMembers.value = [];
+  await run(async () => {
+    await loadFamilyManagement(session.requestContext());
+    if (!isPageCurrent()) return;
+    status.value = familyCopy.capabilitiesRefreshed;
+    statusIsError.value = false;
+    await focusRouteHeading();
+  });
+}
+
 async function submitChildPasswordReset(): Promise<void> {
   if (busy.value || childResetBlocked.value) return;
   fieldError.value = {};
@@ -443,6 +502,12 @@ async function showChildResetError(
   for (const error of result.fieldErrors ?? []) fieldError.value[error.field] = error.message;
   status.value = result.recoverable ? result.message : familyCopy.resetUnavailable;
   childResetBlocked.value = !result.recoverable;
+  if (result.denied) {
+    familyMembers.value = [];
+    await loadFamilyManagement(session.requestContext());
+    status.value = familyCopy.capabilitiesRefreshed;
+    await focusRouteHeading();
+  }
   statusIsError.value = true;
   if (fieldError.value.password) {
     await nextTick();
@@ -451,6 +516,7 @@ async function showChildResetError(
 }
 
 async function submitHousehold(): Promise<void> {
+  if (!canBootstrap.value) return;
   fieldError.value = {};
   if (!householdName.value.trim()) {
     fieldError.value.name = copy.nameRequired;
@@ -487,6 +553,7 @@ async function submitHousehold(): Promise<void> {
 }
 
 async function submitProfile(): Promise<void> {
+  if (!hasCapability(profileAllowedActions.value, Capability.profileUpdate)) return;
   fieldError.value = {};
   const trimmedDisplayName = displayName.value.trim();
   if (!trimmedDisplayName) fieldError.value.displayName = profileCopy.displayNameRequired;
@@ -510,14 +577,26 @@ async function submitProfile(): Promise<void> {
       status.value = result.message;
       statusIsError.value = true;
       if (!result.recoverable) signOut(result.message);
+      if (result.denied) {
+        // A failed refresh cannot keep the denied action available from stale hints.
+        if (session.backgroundFailure.value) {
+          profileAllowedActions.value = [];
+          profileCapabilityRefreshBlocked.value = true;
+          status.value = familyCopy.actionsUnavailable;
+        } else {
+          status.value = familyCopy.capabilitiesRefreshed;
+        }
+        await focusRouteHeading();
+      }
       return;
     }
+    profileAllowedActions.value = result.data.allowedActions ?? [];
     profile.value = result.data.profile;
     session.applyConfirmedProfile(profile.value);
     status.value =
       route.name === AppRouteName.profile ? familyCopy.profileSaved : profileCopy.saved;
     statusIsError.value = false;
-    if (membership.value?.role === 'child') {
+    if (!can(Capability.childManage)) {
       await navigate(AppRouteName.todos, true);
       return;
     }
@@ -552,6 +631,7 @@ async function retryFamilyManagement(): Promise<void> {
 }
 
 async function submitChild(): Promise<void> {
+  if (!can(Capability.childCreate)) return;
   const input = await validatedChildInput();
   if (!input) return;
   await run(async () => provisionChild(input));
@@ -650,6 +730,8 @@ function clearPrivateState(message: string): void {
   displayName.value = '';
   profileColor.value = '';
   profile.value = null;
+  profileAllowedActions.value = [];
+  profileCapabilityRefreshBlocked.value = false;
   familyMembers.value = [];
   clearChildForm();
   replacementChildPassword.value = '';
@@ -969,6 +1051,9 @@ async function focusRouteHeading(): Promise<void> {
     <form v-else-if="screen === 'household'" class="space-y-4" @submit.prevent="submitHousehold">
       <h2 class="page-heading text-xl">{{ copy.createHousehold }}</h2>
       <p class="body-muted text-sm">{{ copy.householdHelp }}</p>
+      <p v-if="!canBootstrap" role="status" class="body-secondary">
+        {{ familyCopy.actionsUnavailable }}
+      </p>
       <label class="block"
         >Household name<input
           ref="firstField"
@@ -996,7 +1081,7 @@ async function focusRouteHeading(): Promise<void> {
           </option></select
         ><span class="error">{{ fieldError.timezone }}</span></label
       >
-      <button class="primary" type="submit" :disabled="busy">
+      <button class="primary" type="submit" :disabled="busy || !canBootstrap">
         {{ busy ? copy.creatingHousehold : copy.createHouseholdAction }}
       </button>
       <button type="button" class="link" @click="signOut()">{{ copy.signOut }}</button>
@@ -1066,7 +1151,11 @@ async function focusRouteHeading(): Promise<void> {
         </fieldset>
       </div>
       <div class="form-actions">
-        <button class="primary" type="submit" :disabled="busy">
+        <button
+          class="primary"
+          type="submit"
+          :disabled="busy || !hasCapability(profileAllowedActions, Capability.profileUpdate)"
+        >
           {{
             busy
               ? profileCopy.saving
@@ -1077,7 +1166,7 @@ async function focusRouteHeading(): Promise<void> {
         </button>
         <RouterLink
           v-if="screen === 'profile-edit'"
-          :to="{ name: membership?.role === 'child' ? AppRouteName.todos : AppRouteName.family }"
+          :to="{ name: can(Capability.childManage) ? AppRouteName.family : AppRouteName.todos }"
           class="link inline-flex items-center"
           :aria-disabled="busy"
           :tabindex="busy ? -1 : undefined"
@@ -1159,7 +1248,7 @@ async function focusRouteHeading(): Promise<void> {
           maxlength="24"
           autocomplete="username"
           class="field"
-          :disabled="busy || childProvisioningBlocked"
+          :disabled="busy || childProvisioningBlocked || !can(Capability.childCreate)"
           :aria-invalid="!!fieldError.username"
           aria-describedby="child-username-error"
         /><span id="child-username-error" class="error">{{ fieldError.username }}</span></label
@@ -1172,7 +1261,7 @@ async function focusRouteHeading(): Promise<void> {
           maxlength="60"
           autocomplete="nickname"
           class="field"
-          :disabled="busy || childProvisioningBlocked"
+          :disabled="busy || childProvisioningBlocked || !can(Capability.childCreate)"
           :aria-invalid="!!fieldError.displayName"
         /><span class="error">{{ fieldError.displayName }}</span></label
       >
@@ -1191,7 +1280,7 @@ async function focusRouteHeading(): Promise<void> {
                 type="radio"
                 name="child-profile-color"
                 :value="color.id"
-                :disabled="busy || childProvisioningBlocked"
+                :disabled="busy || childProvisioningBlocked || !can(Capability.childCreate)"
               />
               <span
                 class="profile-color-swatch"
@@ -1213,7 +1302,7 @@ async function focusRouteHeading(): Promise<void> {
           type="password"
           autocomplete="new-password"
           class="field"
-          :disabled="busy || childProvisioningBlocked"
+          :disabled="busy || childProvisioningBlocked || !can(Capability.childCreate)"
           :aria-invalid="!!fieldError.password"
           aria-describedby="child-password-policy child-password-error"
       /></label>
@@ -1222,7 +1311,11 @@ async function focusRouteHeading(): Promise<void> {
       }}</span>
       <span id="child-password-error" class="error">{{ fieldError.password }}</span>
       <div class="form-actions">
-        <button class="primary" type="submit" :disabled="busy || childProvisioningBlocked">
+        <button
+          class="primary"
+          type="submit"
+          :disabled="busy || childProvisioningBlocked || !can(Capability.childCreate)"
+        >
           {{ busy ? familyCopy.creatingChild : familyCopy.createChildAction }}
         </button>
         <RouterLink
@@ -1245,12 +1338,19 @@ async function focusRouteHeading(): Promise<void> {
           <p class="body-muted mt-1 text-sm">{{ membership.household.name }}</p>
         </div>
         <div class="family-page__actions">
-          <RouterLink :to="{ name: AppRouteName.newChild }" class="primary family-page__create">
+          <RouterLink
+            v-if="can(Capability.childCreate)"
+            :to="{ name: AppRouteName.newChild }"
+            class="primary family-page__create"
+          >
             {{ familyCopy.createChild }}
           </RouterLink>
-          <RouterLink :to="{ name: AppRouteName.newParent }" class="secondary">{{
-            messages.parentAccounts.createHeading
-          }}</RouterLink>
+          <RouterLink
+            v-if="can(Capability.parentCreate)"
+            :to="{ name: AppRouteName.newParent }"
+            class="secondary"
+            >{{ messages.parentAccounts.createHeading }}</RouterLink
+          >
           <button type="button" class="link family-page__sign-out" @click="signOut()">
             {{ copy.signOut }}
           </button>
@@ -1293,7 +1393,7 @@ async function focusRouteHeading(): Promise<void> {
             </dl>
           </div>
           <RouterLink
-            v-if="member.memberId === membership.memberId"
+            v-if="hasCapability(member.allowedActions, Capability.profileUpdate)"
             :to="{ name: AppRouteName.profile }"
             class="link family-member__action"
             @click="prepareProfileEdit"
@@ -1301,24 +1401,35 @@ async function focusRouteHeading(): Promise<void> {
             {{ familyCopy.editProfile }}
           </RouterLink>
           <div
-            v-if="member.role === 'child' && member.activationState === 'ACTIVE'"
+            v-if="
+              hasCapability(member.allowedActions, Capability.childPasswordReset) ||
+              hasCapability(member.allowedActions, Capability.childRemove)
+            "
             class="family-member__actions"
           >
             <RouterLink
+              v-if="hasCapability(member.allowedActions, Capability.childPasswordReset)"
               :to="{ name: AppRouteName.resetChildPassword, params: { memberId: member.memberId } }"
               class="link"
             >
               {{ familyCopy.resetChildPassword }}
             </RouterLink>
             <ChildRemovalControl
+              v-if="hasCapability(member.allowedActions, Capability.childRemove)"
               :member="member"
-              @changed="run(async () => loadFamilyManagement(session.requestContext()))"
+              @changed="refreshFamilyActions"
             />
           </div>
           <PendingParentControls
-            v-if="member.activationState === 'PENDING_ACTIVATION'"
+            v-if="
+              [
+                Capability.pendingParentResend,
+                Capability.pendingParentEmail,
+                Capability.pendingParentCancel,
+              ].some((key) => hasCapability(member.allowedActions, key))
+            "
             :member="member"
-            @changed="run(async () => loadFamilyManagement(session.requestContext()))"
+            @changed="refreshFamilyActions"
           />
         </li>
       </ul>

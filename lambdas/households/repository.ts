@@ -98,6 +98,14 @@ export class DynamoHouseholdRepository implements HouseholdRepository {
     }
   }
 
+  async findBootstrapReplay(input: BootstrapInput): Promise<BootstrapResult | null> {
+    return this.readReplay(
+      input.sub,
+      input.idempotencyKey,
+      hashInput(input.name, input.timezone, input.username),
+    );
+  }
+
   async bootstrap(input: BootstrapInput): Promise<BootstrapResult> {
     if (await isRevoked(this.recordStore, input.sub)) return { kind: 'already-member' };
     const inputHash = hashInput(input.name, input.timezone, input.username);
@@ -239,7 +247,7 @@ export class DynamoHouseholdRepository implements HouseholdRepository {
           ExclusiveStartKey: cursor,
         }),
       );
-      memberships.push(...(result.Items ?? []).filter(isVisibleDirectoryMembership));
+      memberships.push(...(result.Items ?? []));
       cursor = result.LastEvaluatedKey;
     } while (cursor);
     const members = await Promise.all(
@@ -507,6 +515,14 @@ export class InMemoryHouseholdRepository implements HouseholdRepository {
     return resolveMembershipRecords(lookup, membership, household, sub, tokenIssuedAt);
   }
 
+  async findBootstrapReplay(input: BootstrapInput): Promise<BootstrapResult | null> {
+    const replay = this.replays.get(inMemoryReplayKey(input.sub, input.idempotencyKey));
+    if (!replay) return null;
+    if (replay.hash !== hashInput(input.name, input.timezone, input.username))
+      return { kind: 'idempotency-conflict' };
+    return { kind: 'replayed', membership: structuredClone(replay.membership) };
+  }
+
   async bootstrap(input: BootstrapInput): Promise<BootstrapResult> {
     if (await isRevoked(this.recordStore, input.sub)) return { kind: 'already-member' };
     const replayKey = inMemoryReplayKey(input.sub, input.idempotencyKey);
@@ -584,9 +600,9 @@ export class InMemoryHouseholdRepository implements HouseholdRepository {
   }
 
   async listFamilyMembers(householdId: string): Promise<FamilyDirectoryMember[]> {
-    const members = [...this.memberships.values()]
-      .filter((membership) => membership.householdId === householdId)
-      .filter(isVisibleInMemoryDirectoryMembership);
+    const members = [...this.memberships.values()].filter(
+      (membership) => membership.householdId === householdId,
+    );
     const directory = members.map((membership) => {
       const profile =
         this.profiles.get(profileStorageKey(householdId, membership.memberId)) ?? null;
@@ -787,7 +803,12 @@ function directoryMemberFromMembership(
   membership: Membership,
   profile: Profile | null,
 ): FamilyDirectoryMember {
-  if (!profile && membership.role !== HouseholdRole.parent) throw missingProfileError();
+  if (
+    !profile &&
+    membership.role === HouseholdRole.child &&
+    membership.activationState === MembershipActivationState.active
+  )
+    throw missingProfileError();
   return {
     memberId: membership.memberId,
     username: membership.username,
@@ -882,6 +903,12 @@ export function resolveMembershipRecords(
   if (lookup.credentialsValidAfter && !isStoredTimestamp(lookup.credentialsValidAfter)) {
     return { kind: MembershipResolutionKind.inconsistent };
   }
+  if (
+    lookup.credentialsValidAfter &&
+    !isTokenIssuedAfter(lookup.credentialsValidAfter, tokenIssuedAt)
+  ) {
+    return { kind: MembershipResolutionKind.credentialsStale };
+  }
   if (lookup.activationState === MembershipActivationState.pendingActivation) {
     if (lookup.role !== HouseholdRole.parent) {
       return { kind: MembershipResolutionKind.inconsistent };
@@ -890,12 +917,6 @@ export function resolveMembershipRecords(
   }
   if (lookup.activationState === MembershipActivationState.inactive) {
     return { kind: MembershipResolutionKind.inactive };
-  }
-  if (
-    lookup.credentialsValidAfter &&
-    !isTokenIssuedAfter(lookup.credentialsValidAfter, tokenIssuedAt)
-  ) {
-    return { kind: MembershipResolutionKind.credentialsStale };
   }
   return {
     kind: MembershipResolutionKind.active,
@@ -951,7 +972,11 @@ function directoryMemberFromStoredItem(
   membership: Record<string, AttributeValue>,
   profile: Profile | null,
 ): FamilyDirectoryMember {
-  if (!profile && requiredMembershipRole(membership.role) !== HouseholdRole.parent)
+  if (
+    !profile &&
+    requiredMembershipRole(membership.role) === HouseholdRole.child &&
+    requiredActivationState(membership.activationState) === MembershipActivationState.active
+  )
     throw missingProfileError();
   return {
     memberId: requiredStringAttribute(membership.memberId),
@@ -960,23 +985,6 @@ function directoryMemberFromStoredItem(
     activationState: requiredActivationState(membership.activationState),
     ...(profile ? { displayName: profile.displayName, color: profile.color } : {}),
   };
-}
-
-function isVisibleDirectoryMembership(item: Record<string, AttributeValue>): boolean {
-  const activationState = requiredActivationState(item.activationState);
-  if (activationState === MembershipActivationState.active) return true;
-  return (
-    activationState === MembershipActivationState.pendingActivation &&
-    requiredMembershipRole(item.role) === HouseholdRole.parent
-  );
-}
-
-function isVisibleInMemoryDirectoryMembership(membership: Membership): boolean {
-  if (membership.activationState === MembershipActivationState.active) return true;
-  return (
-    membership.activationState === MembershipActivationState.pendingActivation &&
-    membership.role === HouseholdRole.parent
-  );
 }
 
 function sortDirectoryMembers(members: FamilyDirectoryMember[]): FamilyDirectoryMember[] {

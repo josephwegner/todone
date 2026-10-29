@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Capability, hasCapability } from '../../shared/authorizationCapabilities';
 import {
   computed,
   nextTick,
@@ -123,7 +124,16 @@ function outcome(result: ParentAccountResult) {
   }
   return true;
 }
+const canCreate = computed(() => {
+  const state = session.state.value;
+  return (
+    state.kind === 'ready' &&
+    state.context.kind !== 'unattached' &&
+    hasCapability(state.context.membership.capabilities, Capability.parentCreate)
+  );
+});
 async function provision() {
+  if (!canCreate.value) return;
   await run(async () => {
     const request = session.requestContext();
     const result = await createParent(
@@ -266,7 +276,9 @@ async function verify(sendOnly = false) {
           class="primary"
           type="submit"
           :disabled="
-            busy || (!!blockedUsername && blockedUsername === normalizeUsernameForCognito(username))
+            busy ||
+            !canCreate ||
+            (!!blockedUsername && blockedUsername === normalizeUsernameForCognito(username))
           "
         >
           {{ busy ? copy.creating : copy.createAction }}</button

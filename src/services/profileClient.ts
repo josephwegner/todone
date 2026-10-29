@@ -1,3 +1,4 @@
+import { serializeCapabilities, type CapabilityKey } from '../../shared/authorizationCapabilities';
 import type { CredentialSource } from './apiClient';
 import { ProfileColor, ProfileColorHex, type ProfileColorId } from '../../shared/profilePalette';
 import { messages } from '../i18n/messages';
@@ -6,6 +7,7 @@ import { APPLICATION_JSON, fetchAuthenticatedJson, HttpHeader, HttpMethod } from
 export { ProfileColor, ProfileColorHex, type ProfileColorId };
 
 export interface Profile {
+  allowedActions?: readonly CapabilityKey[];
   memberId: string;
   displayName: string;
   color: ProfileColorId;
@@ -13,11 +15,15 @@ export interface Profile {
 }
 
 export type ProfileResult =
-  | { kind: 'success'; data: { profile: Profile | null } }
+  | {
+      kind: 'success';
+      data: { profile: Profile | null; allowedActions?: readonly CapabilityKey[] };
+    }
   | {
       kind: 'error';
       message: string;
       recoverable: boolean;
+      denied?: boolean;
       fieldErrors?: Array<{ field: 'displayName' | 'color' | 'version'; message: string }>;
     };
 
@@ -57,13 +63,16 @@ async function request(
   try {
     const { response, body } = await fetchAuthenticatedJson<{
       profile?: Profile | null;
+      allowedActions?: readonly CapabilityKey[];
       error?: {
         message?: string;
         fieldErrors?: Array<{ field: 'displayName' | 'color' | 'version'; message: string }>;
       };
     }>(url, idToken, init, fetchImpl);
     if (response.ok && body && 'profile' in body) {
-      return { kind: 'success', data: { profile: body.profile ?? null } };
+      const actions = serializeCapabilities(body.allowedActions ?? []);
+      const profile = body.profile ? { ...body.profile, allowedActions: actions } : null;
+      return { kind: 'success', data: { profile, allowedActions: actions } };
     }
     return {
       kind: 'error',
@@ -72,6 +81,7 @@ async function request(
           ? messages.profileClient.sessionEnded
           : (body?.error?.message ?? messages.profileClient.requestFailed),
       recoverable: response.status !== 401,
+      denied: response.status === 403 || response.status === 404,
       fieldErrors: body?.error?.fieldErrors,
     };
   } catch {

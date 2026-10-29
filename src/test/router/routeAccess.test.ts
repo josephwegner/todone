@@ -1,3 +1,4 @@
+import { childCapabilities } from '../../../tests/helpers/capabilityFixtures';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory } from 'vue-router';
 import { createAppRouter } from '../../router';
@@ -10,6 +11,7 @@ const membership = {
   memberId: 'child-member',
   username: 'child-one',
   role: 'child' as const,
+  capabilities: childCapabilities,
   household: { householdId: 'house-one', name: 'River House', timezone: 'America/Chicago' },
 };
 const profile = {

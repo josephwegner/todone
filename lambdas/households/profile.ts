@@ -1,3 +1,6 @@
+import { Capability } from '../../shared/authorizationCapabilities';
+import { membershipHasCapability, selfContext } from '../authorization/enforcement';
+import { profileActions } from '../authorization/projections';
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda';
 import { authenticateRequest } from '../shared/auth';
 import { handleObservedRequest } from '../shared/request';
@@ -39,11 +42,16 @@ export async function readHandler(
     if (resolution.kind !== MembershipResolutionKind.active)
       return membershipResolutionFailureResponse(resolution, requestId);
     const { membership } = resolution;
+    if (!membershipHasCapability(membership, Capability.profileRead, selfContext(membership)))
+      return membershipResolutionFailureResponse(
+        { kind: MembershipResolutionKind.inactive },
+        requestId,
+      );
     const profile = await repository.getProfile(
       membership.household.householdId,
       membership.memberId,
     );
-    return json(HttpStatus.ok, { profile });
+    return json(HttpStatus.ok, { profile, allowedActions: profileActions(membership) });
   });
 }
 
@@ -73,6 +81,11 @@ export async function updateHandler(
     if (resolution.kind !== MembershipResolutionKind.active)
       return membershipResolutionFailureResponse(resolution, requestId);
     const { membership } = resolution;
+    if (!membershipHasCapability(membership, Capability.profileUpdate, selfContext(membership)))
+      return membershipResolutionFailureResponse(
+        { kind: MembershipResolutionKind.inactive },
+        requestId,
+      );
     const result = await repository.saveProfile({
       householdId: membership.household.householdId,
       memberId: membership.memberId,
@@ -88,6 +101,7 @@ export async function updateHandler(
     }
     return json(result.kind === 'created' ? HttpStatus.created : HttpStatus.ok, {
       profile: result.profile,
+      allowedActions: profileActions(membership),
     });
   });
 }

@@ -66,3 +66,15 @@ coverage before this capability is complete. Keep profile/lifecycle writes condi
 Membership so late writers cannot recreate purged data. The approved hash-only revocation marker
 blocks stale-token bootstrap after lookup deletion and expires after confirmed Cognito deletion
 plus configured token lifetime/tolerance; never retain raw removed-child identity or snapshots.
+
+## Required central authorization integration
+
+Delivered protected operations must extend `shared/authorizationCapabilities.ts` and the central
+policy. Register a stable key, eligible principals, trusted household/self/target scope and
+lifecycle restrictions before implementation; do not recreate role/state authorization in
+handlers, repositories or UI. Update the authorization matrix and add policy tables plus endpoint
+security-negative/side-effect-order tests. Broad capabilities and contextual `allowedActions` are
+server-produced presentation hints only. Preserve conditional writes, scoped queries and
+non-disclosing denials. Completed retries require caller-bound completed-receipt decisions, never
+new side effects against missing targets. Service/scheduler principals need an explicit separate
+policy boundary and must not inherit user grants.

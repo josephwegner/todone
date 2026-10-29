@@ -1,10 +1,7 @@
+import type { CapabilityKey } from '../../shared/authorizationCapabilities';
 import type { ChildRemovalRepository } from './childRemoval';
 import type { PendingParentRepository } from './pendingParents';
-import {
-  MembershipResolutionKind,
-  type PendingParentAction,
-  type ProfileColorId,
-} from './constants';
+import { MembershipResolutionKind, type ProfileColorId } from './constants';
 
 export type MembershipRole = 'parent' | 'child';
 export type MembershipActivationState = 'ACTIVE' | 'PENDING_ACTIVATION' | 'INACTIVE';
@@ -72,11 +69,8 @@ export interface FamilyDirectoryMember {
   color?: ProfileColorId;
 }
 
-export type PendingParentActionValue =
-  (typeof PendingParentAction)[keyof typeof PendingParentAction];
-
 export interface FamilyDirectoryEntry extends FamilyDirectoryMember {
-  allowedActions: PendingParentActionValue[];
+  allowedActions: CapabilityKey[];
 }
 
 export interface SaveProfileInput {
@@ -130,6 +124,7 @@ export interface HouseholdRepository {
   readonly childRemoval: ChildRemovalRepository;
   readonly pendingParents: PendingParentRepository;
   resolveMembership(sub: string, tokenIssuedAt?: number): Promise<MembershipResolution>;
+  findBootstrapReplay(input: BootstrapInput): Promise<BootstrapResult | null>;
   bootstrap(input: BootstrapInput): Promise<BootstrapResult>;
   getProfile(householdId: string, memberId: string): Promise<Profile | null>;
   saveProfile(input: SaveProfileInput): Promise<SaveProfileResult>;

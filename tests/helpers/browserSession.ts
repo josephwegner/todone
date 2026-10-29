@@ -1,3 +1,5 @@
+import { Capability } from '../../shared/authorizationCapabilities';
+import { parentCapabilities, childCapabilities, profileAllowedActions } from './capabilityFixtures';
 import { expect, type BrowserContext, type Page, type Route } from '@playwright/test';
 
 export const syntheticAccounts = {
@@ -88,6 +90,7 @@ export async function installSessionHttpFixture(context: BrowserContext) {
       memberId: account.memberId,
       username: account.username,
       role: account.role,
+      capabilities: account.role === 'parent' ? parentCapabilities : childCapabilities,
       household: account.household,
     };
     const profile = {
@@ -101,7 +104,7 @@ export async function installSessionHttpFixture(context: BrowserContext) {
       return;
     }
     if (path.endsWith('/profiles/me')) {
-      await route.fulfill({ headers, json: { profile } });
+      await route.fulfill({ headers, json: { profile, allowedActions: profileAllowedActions } });
       return;
     }
     if (path.endsWith('/family-members') && account.role === 'parent') {
@@ -114,7 +117,7 @@ export async function installSessionHttpFixture(context: BrowserContext) {
               username: account.username,
               role: account.role,
               activationState: 'ACTIVE',
-              allowedActions: [],
+              allowedActions: [Capability.profileUpdate],
             },
           ],
         },

@@ -167,6 +167,8 @@ interface EnglishMessages {
   };
   familyClient: { sessionEnded: string; requestFailed: string };
   familyManagement: {
+    capabilitiesRefreshed: string;
+    actionsUnavailable: string;
     heading: string;
     loading: string;
     loadFailed: string;

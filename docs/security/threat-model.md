@@ -148,3 +148,17 @@ purge, token-bound marker expiry, and username reuse. Terraform vendors the pinn
 with only TTL added, preserving the existing table resource address, keys, PITR, encryption, and
 deletion protection. Reject any replacement plan; no apply/deploy is authorized. Rollback must
 retain revocation-aware Membership/bootstrap checks until all relevant old JWTs have expired.
+
+## Derived capability threats
+
+Forged, overposted, cached or stale capability arrays confer no authority. Resolve current verified
+identity/Membership and evaluate the central policy before scoped reads or administration. Unknown
+keys and incomplete context fail closed. Preserve scoped keys, credential cutoff, revocation,
+conditional guards and non-disclosing 404 responses. Directory projection uses that same policy,
+preventing a child from receiving pending-parent data. Client denial triggers authoritative refresh
+without replaying mutations; private state clears on session loss. Completed receipts authorize
+only a caller-bound recorded result, never a new mutation against an absent target. No policy
+context, identity, arrays or receipt data enter logs; only registered keys and coarse outcomes may
+be aggregated. Registry enumeration, endpoint order tests and stale-client browser tests verify
+these boundaries. Rollback coordinates action-vocabulary client/server versions and retains
+revocation-aware reads. No capability grants are persisted.

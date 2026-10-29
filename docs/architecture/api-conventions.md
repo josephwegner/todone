@@ -39,7 +39,7 @@ GET /api/v1/memberships/current
 Authorization: Bearer <Cognito-ID-token>
 ```
 
-An authenticated account without Membership receives exactly:
+An authenticated account without Membership receives the following base fields (plus additive capability metadata):
 
 ```json
 {
@@ -47,7 +47,7 @@ An authenticated account without Membership receives exactly:
 }
 ```
 
-An active member receives exactly:
+An active member receives the following base fields (plus additive capability metadata):
 
 ```json
 {
@@ -107,7 +107,7 @@ GET /api/v1/family-members
 Authorization: Bearer <Cognito-ID-token>
 ```
 
-The caller's verified `sub` resolves the household; the request accepts no target or household identifier. The response contains only `memberId`, immutable `username`, immutable `role`, activation state, current `displayName`/canonical `color` when a Profile exists, and stable `allowedActions`. Profile-less parents omit name/color and are identified by username and state. It is deterministically ordered by activation state, username, then member ID. Active members have no directory actions. An active parent sees a pending parent with exactly `RESEND_WELCOME`, `CHANGE_EMAIL_AND_RESEND`, and `CANCEL_PENDING_ACCOUNT`; a child receives active members only. Inactive records, recovery email, Cognito status/details, raw `sub`, household details, and cross-household records are never represented.
+The caller's verified `sub` resolves the household; the request accepts no target or household identifier. The response contains only `memberId`, immutable `username`, immutable `role`, activation state, current `displayName`/canonical `color` when a Profile exists, and stable `allowedActions`. Profile-less parents omit name/color and are identified by username and state. It is deterministically ordered by activation state, username, then member ID. Active child targets expose child-management actions only to active parents; self targets may expose self-profile actions. An active parent sees a pending parent with `family.pending-parent.resend-welcome`, `family.pending-parent.change-email-and-resend`, and `family.pending-parent.cancel`; a child receives active members only. Inactive records, recovery email, Cognito status/details, raw `sub`, household details, and cross-household records are never represented.
 
 ## Family-account management contracts
 
@@ -333,3 +333,33 @@ code. EMAIL_VERIFICATION_REQUIRED alone returns to code entry. Successful native
 may consume a code before renewal/activation fails: explicit Retry activation renews and retries
 self activation without replaying the code. Conflict refreshes authorized state without tearing
 down the pending page or automatically looping mutations. Generation checks discard late results.
+
+## Derived authorization capability contract
+
+`shared/authorizationCapabilities.ts` is the stable typed registry; `lambdas/authorization/policy.ts`
+is the sole role/state/relationship policy. Membership resolution retains strong reads, matching
+copies, revocation and credential-cutoff checks. Bootstrap/current-membership responses add sorted,
+unique broad `capabilities`; active Membership representations also carry that array for session
+composition. An unattached response includes `household.bootstrap` at the response level; the
+client carries it through unattached session context and never infers creation permission solely
+from null Membership. Self-profile responses add top-level `allowedActions` even for a null Profile;
+directory entries and account-creation member results carry contextual `allowedActions`.
+
+Only registered namespaced keys are returned. Clients ignore unknown additive keys and treat
+missing capabilities as unavailable, never infer grants from role. Arrays are memory-only hints,
+never mutation inputs or authority. Every request re-evaluates policy against current trusted data.
+Scoped target lookup may precede target evaluation only after broad caller authorization. Missing
+or cross-household targets retain 404; known unmanageable targets retain safe 403. Typed current-
+Membership self-outcomes and credential-stale 401 remain unchanged.
+
+`request.completed.replay` uses a server-owned completed receipt bound to verified caller, route,
+key, target and normalized payload. It permits only returning the completed result, including
+bootstrap after attachment and cancellation/removal after deletion. It cannot execute side effects.
+Absent, mismatched or partial receipts retain denial/conflict behavior. Current inactive, stale or
+inconsistent principals cannot disclose protected replay results.
+
+Authorization observation uses stable capability and coarse allow/deny only, alongside existing
+route/request outcome metrics. Do not log context, arrays, receipt contents or identifiers. Rollback
+uses a coordinated client/server artifact pair: capability fields are additive, but namespaced
+`allowedActions` replace the old pending-parent enum. Old clients must reload; never reinterpret
+unknown action strings. Retain revocation-aware repository checks throughout rollback.

@@ -1,8 +1,7 @@
 import { ref } from 'vue';
+import { serializeCapabilities, type CapabilityKey } from '../../shared/authorizationCapabilities';
 import type { CurrentMembership } from '../services/householdClient';
-
-export const activeMembershipRole = ref<CurrentMembership['role'] | null>(null);
-
+export const activeCapabilities = ref<CapabilityKey[]>([]);
 export function applyMembershipContext(membership: CurrentMembership | null): void {
-  activeMembershipRole.value = membership?.role ?? null;
+  activeCapabilities.value = serializeCapabilities(membership?.capabilities ?? []);
 }

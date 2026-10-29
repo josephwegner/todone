@@ -1,3 +1,4 @@
+import type { CapabilityKey } from '../../shared/authorizationCapabilities';
 import { readonly, shallowRef } from 'vue';
 import { AuthSessionUnavailableError, type AuthClient } from '../services/authClient';
 import type { MembershipFailure } from '../../shared/membershipContract';
@@ -5,7 +6,7 @@ import type { AuthActionResult, AuthSession, SignInResult } from '../services/au
 import type { CurrentMembership } from '../services/householdClient';
 import type { Profile } from '../services/profileClient';
 import type { AuthenticatedRequestSession } from '../services/apiClient';
-import { CurrentMembershipApi, SessionApiFailureCode } from '../../shared/membershipContract';
+import { CurrentMembershipApi } from '../../shared/membershipContract';
 import { messages } from '../i18n/messages';
 import { AuthStorageUnavailableError } from '../services/authSessionErrors';
 import {
@@ -27,8 +28,12 @@ import {
 } from './timing';
 
 export type SessionContext =
-  | { kind: 'unattached' }
-  | { kind: 'profile-required'; membership: CurrentMembership }
+  | { kind: 'unattached'; capabilities?: readonly CapabilityKey[] }
+  | {
+      kind: 'profile-required';
+      membership: CurrentMembership;
+      allowedActions?: readonly CapabilityKey[];
+    }
   | { kind: 'active'; membership: CurrentMembership; profile: Profile };
 
 export type SessionFailure =
@@ -602,8 +607,7 @@ export function createSessionController(dependencies: SessionDependencies) {
                 );
                 return;
               }
-              if (status === 403 && code === SessionApiFailureCode.accessUnavailable)
-                await refreshContext(true);
+              if (status === 403) await refreshContext(true);
             },
           }
         : {}),

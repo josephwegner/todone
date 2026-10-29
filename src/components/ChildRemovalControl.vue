@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Capability, hasCapability } from '../../shared/authorizationCapabilities';
 import { onBeforeUnmount, onDeactivated, ref } from 'vue';
 import type { FamilyMember } from '../services/familyClient';
 import { messages } from '../i18n/messages';
@@ -52,7 +53,13 @@ async function confirm() {
 </script>
 <template>
   <div>
-    <button type="button" class="link" :disabled="busy || blocked" @click="open">
+    <button
+      v-if="hasCapability(member.allowedActions, Capability.childRemove)"
+      type="button"
+      class="link"
+      :disabled="busy || blocked"
+      @click="open"
+    >
       {{ copy.removeChild }}
     </button>
     <dialog

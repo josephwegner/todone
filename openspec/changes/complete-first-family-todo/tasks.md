@@ -21,3 +21,7 @@
 - [ ] 3.3 Capture and manually review populated/empty/error parent and child screens across representative profile tonal families plus every completion treatment at compact, medium, wide, 320-pixel reflow, and 200-percent zoom; completion: visual hierarchy matches the accepted references, long content remains usable, motion is brief/local and responsive on representative browsers, and no status or identity relies on color or animation alone.
 - [ ] 3.4 Profile every accepted completion treatment on representative supported mobile and laptop browsers; completion: effects remain smooth without delaying input, focus, scrolling, confirmed-state presentation, or row removal, and complexity reductions respond to measured behavior rather than an arbitrary element limit.
 - [ ] 3.5 Run format, lint, typecheck, unit tests, integration tests, build, Playwright, and accessibility checks; completion: all required checks pass.
+
+## Central authorization integration
+
+- [ ] Register each delivered protected operation in the shared capability registry and central policy with explicit principal, trusted context and lifecycle rules; update the authorization matrix, response capabilities/actions and policy plus endpoint-negative tests, including denial before side effects and completed-replay boundaries. Completion: no feature-local role/state authorization or client-supplied grant is introduced.

@@ -17,3 +17,7 @@
 - [ ] 3.2 Add Playwright and accessibility tests for label selection, no-match creation, filters, and clear filters; completion: configured browser tests pass.
 - [ ] 3.3 Capture and manually review label entry, suggestion, selection, duplicate, filtered, and filtered-empty states at compact, medium, wide, 320-pixel reflow, and 200-percent zoom; completion: text remains the primary label cue, dynamic focus is stable, and metadata does not overwhelm Todo actions.
 - [ ] 3.4 Run format, lint, typecheck, unit tests, integration tests, build, Playwright, and accessibility checks; completion: all required checks pass.
+
+## Central authorization integration
+
+- [ ] Register each delivered protected operation in the shared capability registry and central policy with explicit principal, trusted context and lifecycle rules; update the authorization matrix, response capabilities/actions and policy plus endpoint-negative tests, including denial before side effects and completed-replay boundaries. Completion: no feature-local role/state authorization or client-supplied grant is introduced.

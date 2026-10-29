@@ -1,14 +1,24 @@
+import { Capability } from '../../shared/authorizationCapabilities';
+import {
+  parentCapabilities,
+  childCapabilities,
+  profileAllowedActions,
+  childAllowedActions,
+  pendingAllowedActions,
+} from '../helpers/capabilityFixtures';
 import { expect, test, type Page, type Route, type TestInfo } from '@playwright/test';
 
 const membership = {
   memberId: 'synthetic-member',
   role: 'parent',
+  capabilities: parentCapabilities,
   household: { householdId: 'synthetic-house', name: 'River House', timezone: 'America/Chicago' },
 };
 
 const childMembership = {
   memberId: 'synthetic-child',
   role: 'child',
+  capabilities: childCapabilities,
   household: { householdId: 'synthetic-house', name: 'River House', timezone: 'America/Chicago' },
 };
 
@@ -100,7 +110,7 @@ async function mockProfileAndDirectory(
   let profile = initialProfile;
   await page.route('**/api/v1/profiles/me', async (route) => {
     if (route.request().method() === 'GET') {
-      await route.fulfill({ json: { profile } });
+      await route.fulfill({ json: { profile, allowedActions: profileAllowedActions } });
       return;
     }
 
@@ -114,7 +124,10 @@ async function mockProfileAndDirectory(
       color: input.color,
       version: (profile?.version ?? 0) + 1,
     };
-    await route.fulfill({ status: initialProfile ? 200 : 201, json: { profile } });
+    await route.fulfill({
+      status: initialProfile ? 200 : 201,
+      json: { profile, allowedActions: profileAllowedActions },
+    });
   });
   await page.route('**/api/v1/family-members', async (route) => {
     await route.fulfill({
@@ -128,7 +141,7 @@ async function mockProfileAndDirectory(
                 activationState: 'ACTIVE',
                 displayName: profile.displayName,
                 color: profile.color,
-                allowedActions: [],
+                allowedActions: [Capability.profileUpdate],
               },
             ])
           : [],
@@ -145,7 +158,10 @@ async function signIn(
     route.fulfill({
       status: 200,
       headers: { 'cache-control': 'no-store' },
-      json: { membership: currentMembership() },
+      json: {
+        membership: currentMembership(),
+        capabilities: currentMembership()?.capabilities ?? [Capability.householdBootstrap],
+      },
     }),
   );
   await page.getByLabel('Username').fill('ParentOne');
@@ -208,7 +224,7 @@ const resetChild: DirectoryMember = {
   role: 'child',
   activationState: 'ACTIVE',
   color: 'LAKE',
-  allowedActions: [],
+  allowedActions: childAllowedActions,
 };
 
 test('child password reset validates, submits once, and clears secrets across history and reload', async ({
@@ -306,7 +322,7 @@ test('registers, verifies email, signs in, creates a household, and reaches onbo
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
 
   await page.route('**/api/v1/memberships/current', (route) =>
-    route.fulfill({ json: { membership: null } }),
+    route.fulfill({ json: { membership: null, capabilities: [Capability.householdBootstrap] } }),
   );
   await page.route('**/api/v1/households', async (route) => {
     const body = route.request().postDataJSON();
@@ -406,7 +422,7 @@ test('renders the family directory with only implemented authorized actions', as
       activationState: 'ACTIVE',
       displayName: 'River',
       color: 'PINE',
-      allowedActions: [],
+      allowedActions: [Capability.profileUpdate],
     },
     {
       memberId: 'child-member',
@@ -415,7 +431,7 @@ test('renders the family directory with only implemented authorized actions', as
       activationState: 'ACTIVE',
       displayName: 'A very long family display name that still wraps naturally',
       color: 'LAKE',
-      allowedActions: [],
+      allowedActions: childAllowedActions,
     },
     {
       memberId: 'pending-parent',
@@ -424,7 +440,7 @@ test('renders the family directory with only implemented authorized actions', as
       activationState: 'PENDING_ACTIVATION',
       displayName: 'Morgan Vale',
       color: 'PINE',
-      allowedActions: ['RESEND_WELCOME', 'CHANGE_EMAIL_AND_RESEND', 'CANCEL_PENDING_ACCOUNT'],
+      allowedActions: pendingAllowedActions,
     },
   ]);
   await signIn(page, () => membership);
@@ -467,7 +483,7 @@ test('creates a child from the parent-only route without placing its password in
           role: 'child',
           activationState: 'ACTIVE',
           color: 'PINE',
-          allowedActions: [],
+          allowedActions: childAllowedActions,
         },
       },
     });
@@ -776,7 +792,9 @@ test('startup retry stays cancellable and late context cannot resurrect sign-out
   await page.route('**/api/v1/memberships/current', async (route) => {
     reads++;
     await pending;
-    await route.fulfill({ json: { membership: null } });
+    await route.fulfill({
+      json: { membership: null, capabilities: [Capability.householdBootstrap] },
+    });
   });
   await page.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Retrying…', exact: true })).toBeDisabled();
@@ -892,7 +910,10 @@ test('background context refresh preserves a draft and its original write versio
     }
     refreshes++;
     await route.fulfill({
-      json: { profile: { ...existingProfile, displayName: 'Changed elsewhere', version: 2 } },
+      json: {
+        allowedActions: profileAllowedActions,
+        profile: { ...existingProfile, displayName: 'Changed elsewhere', version: 2 },
+      },
     });
   });
   await page.clock.fastForward(300_000);

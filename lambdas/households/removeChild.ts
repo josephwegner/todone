@@ -1,3 +1,10 @@
+import { principalFromResolution } from '../authorization/policy';
+import { Capability } from '../../shared/authorizationCapabilities';
+import {
+  membershipHasCapability,
+  memberContext,
+  completedReplayAllowed,
+} from '../authorization/enforcement';
 import { HouseholdRole, MembershipActivationState } from './constants';
 import { randomUUID } from 'node:crypto';
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda';
@@ -36,7 +43,7 @@ export async function handler(
       const resolution = await repository.resolveMembership(identity.sub, identity.issuedAt);
       if (resolution.kind !== MembershipResolutionKind.active)
         return membershipResolutionFailureResponse(resolution, requestId);
-      if (resolution.membership.role !== HouseholdRole.parent)
+      if (!membershipHasCapability(resolution.membership, Capability.childManage))
         throw new PendingParentFailure('unavailable');
       let value: unknown;
       try {
@@ -76,7 +83,16 @@ export async function handler(
         );
       const memberId = event.pathParameters?.memberId ?? '';
       const removal = repository.childRemoval;
-      if (await removal.replay(identity.sub, key, memberId)) return noContentResponse();
+      if (await removal.replay(identity.sub, key, memberId)) {
+        if (
+          !completedReplayAllowed(
+            principalFromResolution(identity, resolution),
+            Capability.childRemove,
+          )
+        )
+          throw new PendingParentFailure('unavailable');
+        return noContentResponse();
+      }
       const householdId = resolution.membership.household.householdId;
       const target = await repository.getHouseholdMemberTarget(householdId, memberId);
       if (!target)
@@ -87,8 +103,11 @@ export async function handler(
           requestId,
         );
       if (
-        target.role !== HouseholdRole.child ||
-        target.activationState !== MembershipActivationState.active
+        !membershipHasCapability(
+          resolution.membership,
+          Capability.childRemove,
+          memberContext(householdId, target),
+        )
       )
         return errorResponse(
           HttpStatus.forbidden,

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Capability, hasCapability } from '../../shared/authorizationCapabilities';
 import { nextTick, onBeforeUnmount, onDeactivated, ref, watch } from 'vue';
 import type { FamilyMember } from '../services/familyClient';
 import { messages } from '../i18n/messages';
@@ -69,7 +70,7 @@ async function submit() {
 <template>
   <div class="flex flex-wrap gap-3">
     <button
-      v-if="member.allowedActions.includes('RESEND_WELCOME')"
+      v-if="hasCapability(member.allowedActions, Capability.pendingParentResend)"
       type="button"
       class="link"
       :disabled="busy || blocked"
@@ -78,7 +79,7 @@ async function submit() {
       {{ copy.resend }}
     </button>
     <button
-      v-if="member.allowedActions.includes('CHANGE_EMAIL_AND_RESEND')"
+      v-if="hasCapability(member.allowedActions, Capability.pendingParentEmail)"
       type="button"
       class="link"
       :disabled="busy || blocked"
@@ -87,7 +88,7 @@ async function submit() {
       {{ copy.changeEmail }}
     </button>
     <button
-      v-if="member.allowedActions.includes('CANCEL_PENDING_ACCOUNT')"
+      v-if="hasCapability(member.allowedActions, Capability.pendingParentCancel)"
       type="button"
       class="link"
       :disabled="busy || blocked"

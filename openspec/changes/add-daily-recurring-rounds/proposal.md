@@ -27,3 +27,15 @@ After labels establish lightweight organization, families can reduce repeated To
 - Adds scheduled idempotent server-side generation, current-round reconciliation, and household-timezone logic.
 - Extends full child-account removal to delete recurrence templates, generated Todos, recurrence history, and associated restricted audit snapshots for that child.
 - Excludes weekly/monthly schedules, ordered routine checklists, notifications, points, and rewards.
+
+## Required central authorization integration
+
+Delivered protected operations must extend `shared/authorizationCapabilities.ts` and the central
+policy. Register a stable key, eligible principals, trusted household/self/target scope and
+lifecycle restrictions before implementation; do not recreate role/state authorization in
+handlers, repositories or UI. Update the authorization matrix and add policy tables plus endpoint
+security-negative/side-effect-order tests. Broad capabilities and contextual `allowedActions` are
+server-produced presentation hints only. Preserve conditional writes, scoped queries and
+non-disclosing denials. Completed retries require caller-bound completed-receipt decisions, never
+new side effects against missing targets. Service/scheduler principals need an explicit separate
+policy boundary and must not inherit user grants.

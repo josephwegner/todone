@@ -1,3 +1,5 @@
+import { Capability } from '../../shared/authorizationCapabilities';
+import { parentCapabilities, profileAllowedActions } from '../helpers/capabilityFixtures';
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 const issuedAt = Math.floor(Date.now() / 1000);
@@ -116,6 +118,7 @@ for (const recovery of ['success', 'conflict', 'network', 'reload'] as const) {
       memberId: 'synthetic-member',
       username: 'pending',
       role: 'parent',
+      capabilities: parentCapabilities,
       household: { householdId: 'synthetic-home', name: 'Home', timezone: 'America/Chicago' },
     };
     let profile: { memberId: string; displayName: string; color: string; version: number } | null =
@@ -174,9 +177,13 @@ for (const recovery of ['success', 'conflict', 'network', 'reload'] as const) {
             version: 0,
           });
           profile = { ...chosenProfile, displayName: 'My chosen name', color: 'LAKE' };
-          return route.fulfill({ status: 201, headers, json: { profile } });
+          return route.fulfill({
+            status: 201,
+            headers,
+            json: { profile, allowedActions: profileAllowedActions },
+          });
         }
-        return route.fulfill({ headers, json: { profile } });
+        return route.fulfill({ headers, json: { profile, allowedActions: profileAllowedActions } });
       }
       if (path.endsWith('/family-members'))
         return route.fulfill({
@@ -187,8 +194,9 @@ for (const recovery of ['success', 'conflict', 'network', 'reload'] as const) {
                 ...profile,
                 username: 'pending',
                 role: 'parent',
+                capabilities: parentCapabilities,
                 activationState: 'ACTIVE',
-                allowedActions: [],
+                allowedActions: [Capability.profileUpdate],
               },
             ],
           },

@@ -152,6 +152,8 @@
     },
   'familyManagement':
     {
+      'actionsUnavailable': 'This action is currently unavailable. Refresh the page or sign out.',
+      'capabilitiesRefreshed': 'Available actions have been refreshed. Review the current page before trying again.',
       'heading': 'Family management',
       'loading': 'Loading your family…',
       'loadFailed': 'We could not load your family.',

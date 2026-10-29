@@ -21,3 +21,7 @@
 - [ ] 3.3 Add Playwright and accessibility coverage for current versus historical routine views; completion: keyboard and screen-reader interactions pass.
 - [ ] 3.4 Capture and manually review template, current, missed/skipped/completed, detached, empty, and failure states at compact, medium, wide, 320-pixel reflow, and 200-percent zoom; completion: generated work retains ordinary Todo hierarchy, history stays chronological and calm, and correction/retirement feedback does not use celebratory motion.
 - [ ] 3.5 Run all required quality checks; completion: format, lint, typecheck, unit, integration, build, Playwright, and accessibility checks pass.
+
+## Central authorization integration
+
+- [ ] Register each delivered protected operation in the shared capability registry and central policy with explicit principal, trusted context and lifecycle rules; update the authorization matrix, response capabilities/actions and policy plus endpoint-negative tests, including denial before side effects and completed-replay boundaries. Completion: no feature-local role/state authorization or client-supplied grant is introduced.

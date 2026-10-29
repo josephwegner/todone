@@ -127,3 +127,23 @@ code. EMAIL_VERIFICATION_REQUIRED alone returns to code entry. Successful native
 may consume a code before renewal/activation fails: explicit Retry activation renews and retries
 self activation without replaying the code. Conflict refreshes authorized state without tearing
 down the pending page or automatically looping mutations. Generation checks discard late results.
+
+## Capability-driven shell and controls
+
+| Capability state | Existing component anatomy and recovery |
+| --- | --- |
+| Resolving | SessionRoot/ProductionBootstrap reserve the existing loading region; no guessed navigation or target controls. |
+| Allowed | App route links use broad capabilities; profile and directory controls use current represented actions. Keep parent family/create grouping and child My Todos priority. |
+| Unavailable | Hide actions with no useful prerequisite explanation. Keep a disabled action only when persistent context explains a temporary prerequisite. |
+| Stale after render | Never replay a mutation. Refresh current Membership plus affected resource after safe denial; clear unavailable target controls. |
+| Denied/refreshed | Announce safe outcome in the existing status region; retain safe profile draft, clear passwords/codes, and focus the refreshed section heading when the invoking action disappears. |
+| Refresh failure | Preserve permitted non-secret input with retry/error feedback; do not present old actions as current. |
+| Session loss | SessionRoot clears private content and drafts; sign-in receives focus and a safe session-ended announcement. |
+
+The shell stays continuous at compact width and uses existing design tokens and breakpoints. Role
+and activation labels may describe members but never select controls. Profile setup receives
+contextual actions even before a Profile exists. Capability strings and denial internals are not
+user copy. Capability arrays remain memory-only, with no URL/history/storage authority.
+
+Family header and member-row layout responds to the available content container width, so
+enlargement retains stacked readable controls instead of activating an unsuitable viewport layout.

@@ -241,3 +241,16 @@ with synthetic responses and blocks other remote hosts. It covers real SDK passw
 native email verification, invalid-code recovery, token renewal, and activation UI success without
 turning off the emulator's explicit unsupported-verification gate. It is automated adapter/UI
 evidence, not real AWS email-delivery evidence. Run it alongside ordinary e2e/a11y suites.
+
+## Authorization capability verification
+
+Enumerate every registry key against anonymous, unattached, pending, inactive, inconsistent,
+credential-stale, active child and active parent principals. Cover complete/missing/foreign/self/
+peer contexts, target lifecycle, unknown keys and sorted/deduplicated projections. Retain real
+Membership adapter cutoff/matching tests and endpoint denials before Cognito/writes. Verify caller-
+bound completed replay, mismatched/partial/foreign receipts and no repeated side effects. Component,
+Playwright and axe tests exercise capability-only navigation, no grants from role or submitted
+arrays, stale-action denial/refresh, safe draft retention, focus, announcements and session loss.
+Review compact/medium/wide, 320px reflow and 200-percent zoom states. Run `npm run verify-local`,
+relevant e2e/a11y suites and artifact secret scans. These are local evidence, never deployment
+authorization. Terraform validation is required only when infrastructure is affected.

@@ -1,3 +1,4 @@
+import { serializeCapabilities, type CapabilityKey } from '../../shared/authorizationCapabilities';
 import type { CredentialSource } from './apiClient';
 import {
   currentMembershipFailure,
@@ -10,10 +11,12 @@ export interface CurrentMembership {
   memberId: string;
   username: string;
   role: 'parent' | 'child';
+  capabilities?: readonly CapabilityKey[];
   household: { householdId: string; name: string; timezone: string };
 }
 
 export interface MembershipResponse {
+  capabilities?: readonly CapabilityKey[];
   membership: CurrentMembership | null;
 }
 
@@ -63,6 +66,7 @@ async function request(
   try {
     const { response, body } = await fetchAuthenticatedJson<{
       membership?: CurrentMembership | null;
+      capabilities?: readonly CapabilityKey[];
       error?: {
         code?: string;
         message?: string;
@@ -70,7 +74,19 @@ async function request(
       };
     }>(url, idToken, init, fetchImpl);
     if (response.ok && body && 'membership' in body) {
-      return { kind: 'success', data: { membership: body.membership ?? null } };
+      const membership = body.membership
+        ? {
+            ...body.membership,
+            capabilities: serializeCapabilities(body.membership.capabilities ?? []),
+          }
+        : null;
+      return {
+        kind: 'success',
+        data: {
+          membership,
+          capabilities: serializeCapabilities(body.capabilities ?? membership?.capabilities ?? []),
+        },
+      };
     }
     const failure =
       url === CurrentMembershipApi.path

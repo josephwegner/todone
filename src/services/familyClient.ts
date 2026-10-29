@@ -1,3 +1,4 @@
+import { serializeCapabilities, type CapabilityKey } from '../../shared/authorizationCapabilities';
 import type { CredentialSource } from './apiClient';
 import type { ProfileColorId } from '../../shared/profilePalette';
 import { messages } from '../i18n/messages';
@@ -5,9 +6,6 @@ import { APPLICATION_JSON, fetchAuthenticatedJson, HttpHeader, HttpMethod } from
 
 export type FamilyMemberRole = 'parent' | 'child';
 export type FamilyMemberState = 'ACTIVE' | 'PENDING_ACTIVATION';
-export type PendingParentAction =
-  'RESEND_WELCOME' | 'CHANGE_EMAIL_AND_RESEND' | 'CANCEL_PENDING_ACCOUNT';
-
 export interface FamilyMember {
   memberId: string;
   username: string;
@@ -15,12 +13,12 @@ export interface FamilyMember {
   activationState: FamilyMemberState;
   displayName?: string;
   color?: ProfileColorId;
-  allowedActions: PendingParentAction[];
+  allowedActions: CapabilityKey[];
 }
 
 export type FamilyDirectoryResult =
   | { kind: 'success'; data: { members: FamilyMember[] } }
-  | { kind: 'error'; message: string; recoverable: boolean };
+  | { kind: 'error'; message: string; recoverable: boolean; denied?: boolean };
 
 export interface CreateChildInput {
   username: string;
@@ -36,6 +34,7 @@ export type CreateChildResult =
       kind: 'error';
       message: string;
       recoverable: boolean;
+      denied?: boolean;
       fieldErrors?: Array<{ field: string; code: string; message: string }>;
     };
 
@@ -45,6 +44,7 @@ export type ResetChildPasswordResult =
       kind: 'error';
       message: string;
       recoverable: boolean;
+      denied?: boolean;
       sessionExpired?: boolean;
       fieldErrors?: Array<{ field: string; code: string; message: string }>;
     };
@@ -67,7 +67,16 @@ export async function fetchFamilyMembers(
       members?: FamilyMember[];
       error?: { message?: string };
     }>(FamilyApiRoute.members, idToken, { method: HttpMethod.get }, fetchImpl);
-    if (response.ok && body?.members) return { kind: 'success', data: { members: body.members } };
+    if (response.ok && body?.members)
+      return {
+        kind: 'success',
+        data: {
+          members: body.members.map((member) => ({
+            ...member,
+            allowedActions: serializeCapabilities(member.allowedActions ?? []),
+          })),
+        },
+      };
     return {
       kind: 'error',
       message:
@@ -75,6 +84,7 @@ export async function fetchFamilyMembers(
           ? messages.familyClient.sessionEnded
           : (body?.error?.message ?? messages.familyClient.requestFailed),
       recoverable: response.status !== 401,
+      denied: response.status === 403 || response.status === 404,
     };
   } catch {
     return { kind: 'error', message: messages.generic.networkError, recoverable: true };
@@ -113,6 +123,7 @@ export async function resetChildPassword(
         response.status !== 401 &&
         (response.status < 500 || body?.error?.code === PASSWORD_RESET_UNAVAILABLE),
       sessionExpired: response.status === 401,
+      denied: response.status === 403 || response.status === 404,
       ...(body?.error?.fieldErrors ? { fieldErrors: body.error.fieldErrors } : {}),
     };
   } catch {

@@ -1,4 +1,12 @@
-import { HouseholdRole, MembershipActivationState } from './constants';
+import { memberRepresentation, membershipRepresentation } from '../authorization/projections';
+import { Capability } from '../../shared/authorizationCapabilities';
+import {
+  membershipHasCapability,
+  memberContext,
+  enforceCapability,
+  completedReplayAllowed,
+} from '../authorization/enforcement';
+import { principalFromResolution } from '../authorization/policy';
 import { randomUUID } from 'node:crypto';
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda';
 import type { CognitoAdministration } from '../cognito/administration';
@@ -124,7 +132,7 @@ export async function createParentHandler(
       const resolution = await repository.resolveMembership(identity.sub, identity.issuedAt);
       if (resolution.kind !== MembershipResolutionKind.active)
         return membershipResolutionFailureResponse(resolution, requestId);
-      if (resolution.membership.role !== HouseholdRole.parent)
+      if (!membershipHasCapability(resolution.membership, Capability.parentCreate))
         throw new PendingParentFailure('unavailable');
       let value: Record<string, unknown>;
       try {
@@ -160,10 +168,17 @@ export async function createParentHandler(
       const p = repository.pendingParents;
       const replay = await p.replay(p.provisionReplay(input));
       if (replay) {
+        if (
+          !completedReplayAllowed(
+            principalFromResolution(identity, resolution),
+            Capability.parentCreate,
+          )
+        )
+          throw new PendingParentFailure('unavailable');
         const members = await repository.listFamilyMembers(input.householdId);
         const member = members.find((m) => m.memberId === replay.memberId);
         if (!member) throw new PendingParentFailure('unavailable');
-        return json(HttpStatus.ok, { member });
+        return json(HttpStatus.ok, { member: memberRepresentation(resolution.membership, member) });
       }
       const administration = dependencies.administration ?? getCognitoAdministration();
       const created = await administration.createUser({
@@ -171,7 +186,9 @@ export async function createParentHandler(
         username,
         email: input.email,
       });
-      return json(HttpStatus.created, { member: await p.provision(input, created.sub) });
+      return json(HttpStatus.created, {
+        member: memberRepresentation(resolution.membership, await p.provision(input, created.sub)),
+      });
     } catch (error) {
       return parentAccountFailure(error, requestId);
     }
@@ -200,9 +217,15 @@ export async function activateParentHandler(
       const repository = dependencies.repository ?? getHouseholdRepository();
       const resolution = await repository.resolveMembership(identity.sub, identity.issuedAt);
       if (resolution.kind === MembershipResolutionKind.active) {
-        if (resolution.membership.role !== HouseholdRole.parent)
+        if (
+          !enforceCapability(
+            principalFromResolution(identity, resolution),
+            Capability.parentSelfActivate,
+            { kind: 'activation', sub: identity.sub, bindingCurrent: true, proofVerified: true },
+          )
+        )
           throw new PendingParentFailure('unavailable');
-        return json(HttpStatus.ok, { membership: resolution.membership });
+        return json(HttpStatus.ok, { membership: membershipRepresentation(resolution.membership) });
       }
       if (resolution.kind !== MembershipResolutionKind.pendingActivation)
         return membershipResolutionFailureResponse(resolution, requestId);
@@ -216,12 +239,24 @@ export async function activateParentHandler(
       const p = repository.pendingParents,
         context = await p.context(identity.sub),
         owner = randomUUID();
-      await p.acquire(context, owner);
-      if (!proofMatches(context, identity.email, identity.emailVerified)) {
-        await p.release(context, owner);
+      if (
+        !enforceCapability(
+          principalFromResolution(identity, resolution),
+          Capability.parentSelfActivate,
+          {
+            kind: 'activation',
+            sub: context.sub,
+            bindingCurrent: true,
+            proofVerified: proofMatches(context, identity.email, identity.emailVerified),
+          },
+        )
+      ) {
         throw new PendingParentFailure('unproven');
       }
-      return json(HttpStatus.ok, { membership: await p.activate(context, owner) });
+      await p.acquire(context, owner);
+      return json(HttpStatus.ok, {
+        membership: membershipRepresentation(await p.activate(context, owner)),
+      });
     } catch (error) {
       return parentAccountFailure(error, requestId);
     }
@@ -239,6 +274,11 @@ export async function pendingParentActionHandler(
         ? 'email'
         : 'resend';
   const route = PendingParentRoute[action];
+  const actionCapability = {
+    cancel: Capability.pendingParentCancel,
+    email: Capability.pendingParentEmail,
+    resend: Capability.pendingParentResend,
+  }[action];
   return handleObservedRequest(event, route, async (requestId) => {
     try {
       const identity = await authenticateRequest(event, dependencies.verifier);
@@ -247,7 +287,7 @@ export async function pendingParentActionHandler(
       const resolution = await repository.resolveMembership(identity.sub, identity.issuedAt);
       if (resolution.kind !== MembershipResolutionKind.active)
         return membershipResolutionFailureResponse(resolution, requestId);
-      if (resolution.membership.role !== HouseholdRole.parent)
+      if (!membershipHasCapability(resolution.membership, Capability.parentCreate))
         throw new PendingParentFailure('unavailable');
       let value: Record<string, unknown>;
       try {
@@ -288,7 +328,13 @@ export async function pendingParentActionHandler(
         ),
       };
       const p = repository.pendingParents;
-      if (await p.replay(replay)) return noContentResponse();
+      if (await p.replay(replay)) {
+        if (
+          !completedReplayAllowed(principalFromResolution(identity, resolution), actionCapability)
+        )
+          throw new PendingParentFailure('unavailable');
+        return noContentResponse();
+      }
       const target = await repository.getHouseholdMemberTarget(
         resolution.membership.household.householdId,
         targetId,
@@ -301,8 +347,11 @@ export async function pendingParentActionHandler(
           requestId,
         );
       if (
-        target.role !== HouseholdRole.parent ||
-        target.activationState !== MembershipActivationState.pendingActivation
+        !membershipHasCapability(
+          resolution.membership,
+          actionCapability,
+          memberContext(resolution.membership.household.householdId, target),
+        )
       )
         throw new PendingParentFailure('unavailable');
       const context = await p.context(target.sub),

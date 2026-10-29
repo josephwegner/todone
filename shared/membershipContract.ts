@@ -24,3 +24,8 @@ export function currentMembershipFailure(status: number, code: unknown): Members
   if (status === 401 && code === CurrentMembershipApi.credentialsStale) return 'credentials-stale';
   return null;
 }
+
+/** Stable household-bootstrap response copy shared by initial and completed-request paths. */
+export const MembershipApiMessage = {
+  membershipExists: 'A household membership already exists for this account.',
+} as const;

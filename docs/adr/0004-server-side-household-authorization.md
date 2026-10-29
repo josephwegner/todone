@@ -13,7 +13,7 @@ Every household-scoped API operation derives `sub` from a verified JWT, resolves
 
 The server uses the resolved household ID to build persistence keys. A client-supplied household ID, member ID, Todo ID, label ID, template ID, username, or display name never grants authority. Cross-household resources are treated as absent and are not disclosed. Inactive or removed Membership denies access even if a token remains valid.
 
-Shared authorization middleware establishes identity and Membership, but each operation also enforces its role and state rule. Test helpers MUST NOT bypass these checks.
+Shared principal resolution establishes identity and Membership. Every protected operation names a registered capability and uses the central policy to evaluate its role, state and trusted resource context; feature code does not recreate these decisions. Test helpers MUST NOT bypass these checks.
 
 ## Consequences
 

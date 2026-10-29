@@ -61,3 +61,10 @@ This change defines the application-wide authorization structure and migrates be
 - Client capability fields are additive and presentation-only, so older clients may ignore them during migration.
 - No data migration, new managed service, or recurring infrastructure cost is required.
 - The change belongs together because policy vocabulary, server enforcement, client representation, migration, and future extension rules must agree atomically; splitting them would preserve the inconsistent intermediate state this change is intended to remove.
+
+## Approved completed-retry contract
+
+Completed retries remain successful after household attachment or target deletion. The central
+policy explicitly authorizes replay from a server-owned, caller-bound completed receipt matching
+the operation, target and payload. Replay returns only a recorded result; it never authorizes a
+new mutation or repeats external calls. Missing-target mutations continue to fail closed.

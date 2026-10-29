@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { Capability, hasCapability } from '../shared/authorizationCapabilities';
 import { ListTodo, Trees, UserRound, UsersRound } from '@lucide/vue';
 import { computed } from 'vue';
 import { RouterLink, RouterView, useRoute } from 'vue-router';
-import { activeMembershipRole } from './presentation/appContext';
+import { activeCapabilities } from './presentation/appContext';
 import { messages } from './i18n/messages';
 import { AppRouteName } from './router/routes';
 
@@ -15,7 +16,9 @@ const inFamilySection = computed(() =>
     AppRouteName.newParent,
   ].some((name) => name === route?.name),
 );
-const hasApplicationNavigation = computed(() => activeMembershipRole.value !== null);
+const hasApplicationNavigation = computed(() =>
+  hasCapability(activeCapabilities.value, Capability.householdRead),
+);
 </script>
 
 <template>
@@ -34,7 +37,7 @@ const hasApplicationNavigation = computed(() => activeMembershipRole.value !== n
         aria-label="Application"
       >
         <RouterLink
-          v-if="activeMembershipRole === 'child'"
+          v-if="!hasCapability(activeCapabilities, Capability.childManage)"
           :to="{ name: AppRouteName.todos }"
           class="app-navigation-link"
         >
@@ -42,7 +45,7 @@ const hasApplicationNavigation = computed(() => activeMembershipRole.value !== n
           My Todos
         </RouterLink>
         <RouterLink
-          v-if="activeMembershipRole === 'parent'"
+          v-if="hasCapability(activeCapabilities, Capability.childManage)"
           :to="{ name: AppRouteName.family }"
           class="app-navigation-link"
           :class="{ 'router-link-exact-active': inFamilySection }"
@@ -51,12 +54,16 @@ const hasApplicationNavigation = computed(() => activeMembershipRole.value !== n
           <UsersRound :size="18" aria-hidden="true" />
           Family
         </RouterLink>
-        <RouterLink :to="{ name: AppRouteName.profile }" class="app-navigation-link">
+        <RouterLink
+          v-if="hasCapability(activeCapabilities, Capability.profileSelfRead)"
+          :to="{ name: AppRouteName.profile }"
+          class="app-navigation-link"
+        >
           <UserRound :size="18" aria-hidden="true" />
           My profile
         </RouterLink>
         <RouterLink
-          v-if="activeMembershipRole === 'parent'"
+          v-if="hasCapability(activeCapabilities, Capability.recoveryEmailSelfManage)"
           :to="{ name: AppRouteName.security }"
           class="app-navigation-link"
           >{{ messages.navigation.securityTitle }}</RouterLink

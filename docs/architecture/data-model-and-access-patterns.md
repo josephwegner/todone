@@ -163,3 +163,13 @@ family directory remains available. Missing child Profiles still fail closed. Af
 verification and activation, `/profile/setup` requires that parent to choose their own name/color
 through the existing self-only version-zero Profile API before family management. Cancellation
 handles absent and legacy-present Profiles without granting peers profile-write authority.
+
+## Capability derivation and scoped reads
+
+No capability table, Membership grant attribute or data migration is introduced. Strong Membership
+resolution supplies request-local principal scope and credential validity. Repositories supply
+scoped domain records, not caller-specific visibility or action enums. The central policy projects
+visible directory entries/actions and self-profile actions. Storage state/version/ownership checks
+remain atomic concurrency invariants. Administrative replay lookup is caller/route/key-bound and
+validates payload/target; only a completed matching result can feed a replay decision, without
+re-running writes. Missing or foreign receipts never grant target access.
